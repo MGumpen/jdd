@@ -1,0 +1,14 @@
+{
+  "from": "Jonas Eide <jonas.eide@example.org>",
+  "subject": "Striper etter bilvask",
+  "customer_message": "Hei\n\nBilshampoen etterlater striper på lakken når bilen tørker.\n\nJeg bruker Bilshampo Glans 1 L (DEMO-007), ordre ORD-61540. Jeg vasker ute i solen.\n\nMvh\nJonas Eide",
+  "support_reply": "Hei Jonas,\n\nTakk for henvendelsen.\n\nStriper kommer nesten alltid av at shampoen tørker inn før den skylles av. Vask i skyggen når lakken er kald, skyll hver del før du går videre, og tørk med en ren mikrofiberklut.\n\nBland 30 ml shampo per 10 liter vann. Høyere dosering gir også lettere striper.\n\nMed vennlig hilsen\nKari Berg\nJDD Utstyr kundeservice",
+  "test_pii": [
+    "Jonas",
+    "Eide",
+    "jonas.eide@example.org",
+    "ORD-61540",
+    "Kari",
+    "Berg"
+  ]
+}

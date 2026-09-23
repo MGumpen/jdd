@@ -1,0 +1,17 @@
+{
+  "from": "Ingrid Solberg <ingrid.solberg@example.com>",
+  "subject": "Lysbjelke flimrer ved motorstart",
+  "customer_message": "Hei!\n\nLysbjelken min flimrer når motoren startes.\n\nDet gjelder LED-lysbjelke Nordlys 50 cm (DEMO-001) som jeg kjøpte i vår. Den er koblet rett på batteriet. Jeg bestilte den på ordre ORD-58213.\n\nRing meg gjerne på 912 34 567 hvis det er enklere.\n\nMvh\nIngrid Solberg\nStorgata 12\n4612 Kristiansand",
+  "support_reply": "Hei Ingrid,\n\nTakk for henvendelsen.\n\nNår lysbjelken er koblet direkte på batteriet, får den et spenningsfall mens startmotoren går, og da flimrer den. Koble lysbjelken via et relé på tenningsstrøm, så får den først strøm når motoren går.\n\nSjekk også at jordledningen er festet til rent, umalt metall.\n\nMvh\nKari Berg\nJDD Utstyr kundeservice",
+  "test_pii": [
+    "Ingrid",
+    "Solberg",
+    "ingrid.solberg@example.com",
+    "912 34 567",
+    "ORD-58213",
+    "Storgata 12",
+    "4612",
+    "Kari",
+    "Berg"
+  ]
+}

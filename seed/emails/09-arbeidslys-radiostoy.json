@@ -1,0 +1,17 @@
+{
+  "from": "Anders Vik <anders.vik@example.com>",
+  "subject": "Arbeidslys forstyrrer DAB-radioen",
+  "customer_message": "Hei\n\nDAB-radioen mister signalet når arbeidslyset er slått på.\n\nDet er Arbeidslys Fjellrev 24W rund (DEMO-004), to stykker på taket av pickupen. Ordre ORD-63310.\n\nMvh\nAnders Vik\nFjordgata 3\n7010 Trondheim",
+  "support_reply": "Hei Anders,\n\nTakk for henvendelsen.\n\nLED-lys kan gi radiostøy når strømledningen går tett inntil antennekabelen. Legg strømledningen til arbeidslysene et stykke unna antennekabelen, og monter et støyfilter på plussledningen nær lyktene.\n\nHjelper ikke det, kan du bytte til varianten med innebygd støydemping.\n\nMvh\nKari Berg\nJDD Utstyr kundeservice",
+  "test_pii": [
+    "Anders",
+    "Vik",
+    "anders.vik@example.com",
+    "ORD-63310",
+    "Fjordgata 3",
+    "7010",
+    "Trondheim",
+    "Kari",
+    "Berg"
+  ]
+}

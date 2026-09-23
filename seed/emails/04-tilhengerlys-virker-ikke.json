@@ -1,0 +1,18 @@
+{
+  "from": "Tone Myrvold <tone.myrvold@example.com>",
+  "subject": "Tilhengerlys virker ikke",
+  "customer_message": "Hei!\n\nLysene på tilhengeren virker ikke etter montering av det nye baklyssettet.\n\nJeg har montert LED-baklyssett for tilhenger 13-pol (DEMO-009) selv etter bruksanvisningen. Ordrenummer: 998812.\n\nMvh\nTone Myrvold\nBjørkeveien 7, 3120 Nøtterøy\nTelefon 95 51 22 88",
+  "support_reply": "Hei Tone,\n\nTakk for at du tok kontakt.\n\nDet vanligste er dårlig jord. Jordledningen må ha god kontakt med rammen på tilhengeren. Sjekk deretter at alle ledningene er koblet etter koblingsskjemaet, og test tilhengerkontakten på bilen med en kontakttester.\n\nMvh\nMarte Aas\nJDD Utstyr",
+  "test_pii": [
+    "Tone",
+    "Myrvold",
+    "tone.myrvold@example.com",
+    "998812",
+    "Bjørkeveien 7",
+    "3120",
+    "Nøtterøy",
+    "95 51 22 88",
+    "Marte",
+    "Aas"
+  ]
+}

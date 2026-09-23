@@ -1,0 +1,15 @@
+{
+  "from": "Håkon Lie <hakon.lie@example.org>",
+  "subject": "Feil kabelsett til lysbjelken?",
+  "customer_message": "Hei\n\nKabelsettet passer ikke til lysbjelkene mine, jeg får bare koblet til den ene.\n\nJeg kjøpte Kabelsett for lysbjelke, 1 lampe sammen med to lysbjelker på ordre nr 104577. Hva gjør jeg nå?\n\nHilsen Håkon Lie\nTlf. +47 48 12 34 56",
+  "support_reply": "Hei Håkon,\n\nTakk for at du tok kontakt.\n\nKabelsettet for 1 lampe har bare én utgang. Når du skal koble to lysbjelker, trenger du kabelsettet for 2 lamper, som har dobbel utgang og et relé som tåler den høyere strømmen. Du kan returnere settet du har og bytte det.\n\nMed vennlig hilsen\nMarte Aas\nJDD Utstyr",
+  "test_pii": [
+    "Håkon",
+    "Lie",
+    "hakon.lie@example.org",
+    "+47 48 12 34 56",
+    "104577",
+    "Marte",
+    "Aas"
+  ]
+}

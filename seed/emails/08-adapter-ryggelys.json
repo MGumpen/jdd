@@ -1,0 +1,15 @@
+{
+  "from": "Silje Nygård <silje.nygard@example.org>",
+  "subject": "Ryggelys virker ikke med adapter",
+  "customer_message": "Hei,\n\nRyggelyset på tilhengeren virker ikke når jeg bruker adapteren fra 13-pol til 7-pol.\n\nAdapteren er Adapter 7-pol til 13-pol (DEMO-010), kjøpt på ordre nr. 107788. Alle andre lys virker.\n\nMvh\nSilje Nygård\n47 11 20 30",
+  "support_reply": "Hei Silje,\n\nTakk for at du tok kontakt.\n\nEn 7-pols kontakt har ikke egen pinne for ryggelys, så ryggelyset kan ikke overføres gjennom adapteren. Skal ryggelyset virke, må tilhengeren ha 13-pols kontakt, eller bilen må ha en 7-pols kontakt med ryggelys koblet på pinne 2 i stedet for tåkelys.\n\nMvh\nMarte Aas\nJDD Utstyr",
+  "test_pii": [
+    "Silje",
+    "Nygård",
+    "silje.nygard@example.org",
+    "107788",
+    "47 11 20 30",
+    "Marte",
+    "Aas"
+  ]
+}

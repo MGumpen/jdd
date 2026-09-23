@@ -1,0 +1,14 @@
+{
+  "from": "Eline Fosse <eline.fosse@example.com>",
+  "subject": "Hvor lenge varer voksen?",
+  "customer_message": "Hei,\n\nHvor lenge beskytter voksen lakken, og hvor ofte bør den legges på?\n\nJeg har kjøpt Keramisk voks Speil 500 ml. Bilen står ute hele året. Ring meg på 41 22 33 44 om noe er uklart.\n\nHilsen\nEline Fosse",
+  "support_reply": "Hei Eline,\n\nTakk for spørsmålet.\n\nKeramisk voks Speil gir beskyttelse i 4–6 måneder ved normal bruk. For en bil som står ute hele året, anbefaler vi å legge den på vår og høst. Lakken må være ren og tørr, og voksen bør herde i 12 timer uten regn.\n\nMvh\nMarte Aas\nJDD Utstyr",
+  "test_pii": [
+    "Eline",
+    "Fosse",
+    "eline.fosse@example.com",
+    "41 22 33 44",
+    "Marte",
+    "Aas"
+  ]
+}

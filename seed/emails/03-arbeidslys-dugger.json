@@ -1,0 +1,15 @@
+{
+  "from": "Sindre Haugland <sindre.haugland@example.net>",
+  "subject": "Dugg i arbeidslys",
+  "customer_message": "Hei,\n\nArbeidslyset dugger på innsiden av glasset etter vask.\n\nDet gjelder Arbeidslys Fjellrev 48W (DEMO-003) montert på traktoren. Ordre ORD-60021. Duggen går bort etter en stund, men er det feil på lykten?\n\nMvh Sindre Haugland\n40011223",
+  "support_reply": "Hei Sindre,\n\nTakk for henvendelsen.\n\nLitt dugg etter vask er normalt og forsvinner når lyset har stått på en stund. Blir duggen stående, sjekk at ventilasjonsmembranen på baksiden ikke er tildekket.\n\nHvis det står vann inne i lykten, er tetningen defekt, og da reklamerer vi den.\n\nMvh\nKari Berg\nJDD Utstyr kundeservice",
+  "test_pii": [
+    "Sindre",
+    "Haugland",
+    "sindre.haugland@example.net",
+    "40011223",
+    "ORD-60021",
+    "Kari",
+    "Berg"
+  ]
+}

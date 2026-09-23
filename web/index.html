@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="nb">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JDD Kunnskapsdatabase</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>JDD Utstyr</strong>
+      <span>Kunnskapsdatabase · prototype</span>
+    </div>
+    <span id="mode-badge" class="mode-badge" title="Hvordan uttrekk og chat gjøres">…</span>
+  </header>
+
+  <div class="demo-banner" role="note">
+    <strong>Demo:</strong> alle produkter, kunder og e-poster er oppdiktet. Ingen ekte kundedata.
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="flow" aria-selected="true">Dataflyt</button>
+    <button role="tab" data-tab="review" aria-selected="false">Godkjenning <span id="pending-count" class="count" hidden></span></button>
+    <button role="tab" data-tab="kb" aria-selected="false">Kunnskapsbase</button>
+    <button role="tab" data-tab="chat" aria-selected="false">Chatbot</button>
+  </nav>
+
+  <main>
+    <!-- 1. Dataflyt -->
+    <section id="tab-flow" class="tab">
+      <ol class="pipeline" aria-label="Stegene i dataflyten">
+        <li class="step-received">Mottatt</li>
+        <li class="step-anonymized">Anonymisert</li>
+        <li class="step-extracted">Uttrekk</li>
+        <li class="step-duplicate_check">Duplikatsjekk</li>
+        <li class="step-proposed">Forslag</li>
+        <li class="step-approved">Godkjent</li>
+      </ol>
+
+      <div id="stats" class="stats"></div>
+
+      <div class="panel-head">
+        <h2>Hendelser <small>(oppdateres hvert 3. sekund)</small></h2>
+        <div class="actions">
+          <a id="link-mailpit" class="button ghost" target="_blank" rel="noopener">Innboks ↗</a>
+          <a id="link-adminer" class="button ghost" target="_blank" rel="noopener">Database ↗</a>
+          <button id="reset-btn" class="button danger">Nullstill demo</button>
+        </div>
+      </div>
+      <ol id="events" class="events"></ol>
+    </section>
+
+    <!-- 2. Godkjenning -->
+    <section id="tab-review" class="tab" hidden>
+      <label class="reviewer">
+        Ditt navn (ansatt i kundesenteret)
+        <input id="reviewer" autocomplete="name" placeholder="F.eks. Kari">
+      </label>
+      <div id="review-list"></div>
+      <div id="review-detail" hidden></div>
+    </section>
+
+    <!-- 3. Kunnskapsbase -->
+    <section id="tab-kb" class="tab" hidden>
+      <form id="kb-form" class="search">
+        <input id="kb-q" type="search" placeholder="Søk i artikler, f.eks. «flimrer»" aria-label="Søk">
+        <select id="kb-product" aria-label="Produkt"><option value="">Alle produkter</option></select>
+        <button class="button">Søk</button>
+      </form>
+      <div id="kb-results"></div>
+    </section>
+
+    <!-- 4. Chatbot -->
+    <section id="tab-chat" class="tab" hidden>
+      <div class="chat">
+        <p class="hint">Chatboten svarer bare ut fra godkjente artikler, og viser alltid hvilke artikler svaret bygger på.</p>
+        <div id="chat-log" class="chat-log" aria-live="polite"></div>
+        <div id="chat-suggestions" class="suggestions">
+          <button type="button">Hvorfor flimrer lysbjelken når jeg starter bilen?</button>
+          <button type="button">Det er dugg inne i arbeidslyset</button>
+          <button type="button">Tilhengerlysene virker ikke etter montering</button>
+        </div>
+        <form id="chat-form" class="chat-form">
+          <input id="chat-input" placeholder="Skriv spørsmålet ditt …" aria-label="Spørsmål" autocomplete="off">
+          <button class="button">Send</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

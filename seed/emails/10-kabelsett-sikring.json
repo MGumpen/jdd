@@ -1,0 +1,15 @@
+{
+  "from": "Ragnhild Strand <ragnhild.strand@example.net>",
+  "subject": "Sikringen går på kabelsettet",
+  "customer_message": "Hei!\n\nSikringen i kabelsettet går hver gang jeg slår på lysbjelken.\n\nJeg har Kabelsett for lysbjelke, 2 lamper (DEMO-006) koblet til to lysbjelker på 120 W hver. Ordre ORD-64102. Ring meg på 93 00 11 22.\n\nHilsen Ragnhild Strand",
+  "support_reply": "Hei Ragnhild,\n\nTakk for henvendelsen.\n\nTo lysbjelker på 120 W trekker til sammen rundt 20 A på 12 V, og det er mer enn sikringen på 15 A tåler. Bytt til en 25 A sikring. Kabelsettet er dimensjonert for det.\n\nSjekk samtidig at ingen ledninger ligger klemt mot skarpe kanter, fordi det også kan gi kortslutning.\n\nMvh\nMarte Aas\nJDD Utstyr",
+  "test_pii": [
+    "Ragnhild",
+    "Strand",
+    "ragnhild.strand@example.net",
+    "ORD-64102",
+    "93 00 11 22",
+    "Marte",
+    "Aas"
+  ]
+}

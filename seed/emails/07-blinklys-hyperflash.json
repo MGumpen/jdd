@@ -1,0 +1,15 @@
+{
+  "from": "Magnus Brekke <magnus.brekke@example.net>",
+  "subject": "Blinklyset blinker for fort",
+  "customer_message": "Hei!\n\nBlinklyset blinker dobbelt så fort etter at jeg byttet til LED-pærer.\n\nPærene kjøpte jeg et annet sted, men dere har kanskje en løsning? Bilen er en eldre varebil. Ordre ORD-62007 gjaldt noe annet.\n\nMvh\nMagnus Brekke\n+4799887766",
+  "support_reply": "Hei Magnus,\n\nTakk for henvendelsen.\n\nLED-pærer trekker mye mindre strøm enn vanlige pærer, og da tror bilen at en pære er gått og blinker raskt. Løsningen er å montere et LED-kompatibelt blinkrelé, eller en lastmotstand parallelt med hver LED-pære.\n\nMvh\nKari Berg\nJDD Utstyr kundeservice",
+  "test_pii": [
+    "Magnus",
+    "Brekke",
+    "magnus.brekke@example.net",
+    "ORD-62007",
+    "+4799887766",
+    "Kari",
+    "Berg"
+  ]
+}

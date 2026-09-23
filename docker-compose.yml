@@ -1,0 +1,81 @@
+# JDD kunnskapsdatabase – prototype. Start med:  docker compose up --build
+# Verdiene under hentes fra .env (se .env.example), med standardverdier hvis .env mangler.
+
+services:
+  # Test-innboks som etterligner kundesenterets e-post
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"   # webgrensesnitt og REST-API
+      - "1025:1025"   # SMTP
+
+  # Kunnskapsdatabasen og hendelsesloggen
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jdd}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jdd}
+      POSTGRES_DB: ${POSTGRES_DB:-jdd}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Kjøres bare første gang databasen opprettes (tom volum)
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # REST-API og bakgrunnsjobb (ingest-worker)
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://jdd:jdd@db:5432/jdd}
+      MAILPIT_URL: ${MAILPIT_URL:-http://mailpit:8025}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-claude-sonnet-5}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-10}
+      DUPLICATE_THRESHOLD: ${DUPLICATE_THRESHOLD:-0.4}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./seed/emails:/seed/emails:ro   # testene bruker testdataene
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  # Nettsiden for ansatte og chatbot-demoen
+  web:
+    build: ./web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  # Viser tabellene direkte under presentasjonen
+  adminer:
+    image: adminer
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    ports:
+      - "8081:8080"
+    depends_on:
+      - db
+
+  # Sender testdata. Starter ikke med «up», kjøres med:  docker compose run --rm seed
+  seed:
+    build: ./seed
+    profiles: ["seed"]
+    environment:
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    depends_on:
+      - mailpit
+
+volumes:
+  pgdata:
