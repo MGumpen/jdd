@@ -5,8 +5,6 @@ Ingen innlogging i prototypen: ansattnavnet sendes med i forespørselen.
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
-
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
@@ -15,7 +13,7 @@ from sqlalchemy.orm import Session
 from . import chat, config, review, worker
 from .db import get_db
 from .models import EmailItem, KnowledgeArticle, PipelineEvent, Product, Proposal
-from .search import search_articles
+from .search import article_sources, iso, search_articles
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -39,16 +37,11 @@ app = FastAPI(
 
 # ------------------------------------------------------------- Hjelpere
 
-def iso(value: datetime | None) -> str | None:
-    """Tidspunkter lagres i UTC; «Z» forteller nettleseren det, så den viser lokal tid."""
-    return value.isoformat(timespec="seconds") + "Z" if value else None
-
-
 def product_json(p: Product | None) -> dict | None:
     return {"id": p.id, "sku": p.sku, "name": p.name, "category": p.category} if p else None
 
 
-def article_json(a: KnowledgeArticle) -> dict:
+def article_json(a: KnowledgeArticle, sources: list[dict] | None = None) -> dict:
     return {
         "id": a.id,
         "product": product_json(a.product),
@@ -60,6 +53,11 @@ def article_json(a: KnowledgeArticle) -> dict:
         "approved_by": a.approved_by,
         "approved_at": iso(a.approved_at),
         "updated_at": iso(a.updated_at),
+        "status": a.status,
+        "outdated_by": a.outdated_by,
+        "outdated_at": iso(a.outdated_at),
+        "outdated_reason": a.outdated_reason,
+        "sources": sources if sources is not None else [],
     }
 
 
@@ -75,6 +73,7 @@ def proposal_json(p: Proposal) -> dict:
         "proposal_type": p.proposal_type,
         "similarity": float(p.similarity) if p.similarity is not None else None,
         "matched_article": article_json(p.matched_article) if p.matched_article else None,
+        "article_id": p.article_id,
         "status": p.status,
         "reviewed_by": p.reviewed_by,
         "reviewed_at": iso(p.reviewed_at),
@@ -177,7 +176,42 @@ def get_article(article_id: int, db: Session = Depends(get_db)):
     article = db.get(KnowledgeArticle, article_id)
     if article is None:
         raise HTTPException(404, "Artikkelen finnes ikke")
-    return article_json(article)
+    return article_json(article, article_sources(db, [article.id])[article.id])
+
+
+class OutdatedRequest(BaseModel):
+    reviewer: str = Field(min_length=1, max_length=100)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class RestoreRequest(BaseModel):
+    reviewer: str = Field(min_length=1, max_length=100)
+
+
+@app.post("/api/articles/{article_id}/outdated")
+def mark_article_outdated(article_id: int, body: OutdatedRequest, db: Session = Depends(get_db)):
+    """Brukerhistorie 5: merk utdatert informasjon. Chatboten slutter da å bruke artikkelen."""
+    reviewer, reason = body.reviewer.strip(), body.reason.strip()
+    if not reviewer or not reason:
+        raise HTTPException(422, "Ansattnavn og begrunnelse må fylles ut")
+    try:
+        article = review.mark_outdated(db, article_id, reviewer, reason)
+    except review.ReviewError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    return {"status": "outdated", "article": article_json(article)}
+
+
+@app.post("/api/articles/{article_id}/restore")
+def restore_article(article_id: int, body: RestoreRequest, db: Session = Depends(get_db)):
+    """Fjerner utdatert-merket igjen."""
+    reviewer = body.reviewer.strip()
+    if not reviewer:
+        raise HTTPException(422, "Ansattnavn mangler")
+    try:
+        article = review.restore(db, article_id, reviewer)
+    except review.ReviewError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    return {"status": "active", "article": article_json(article)}
 
 
 @app.get("/api/products")
@@ -213,6 +247,9 @@ def stats(db: Session = Depends(get_db)):
         "emails_failed": emails.get("failed", 0),
         "proposals": {s: proposals.get(s, 0) for s in ("pending", "approved", "rejected")},
         "articles": db.scalar(select(func.count()).select_from(KnowledgeArticle)),
+        "articles_outdated": db.scalar(
+            select(func.count()).select_from(KnowledgeArticle).where(KnowledgeArticle.status == "outdated")
+        ),
         "mode": "KI" if config.ai_enabled() else "regel",
         "model": config.LLM_MODEL if config.ai_enabled() else None,
         "duplicate_threshold": config.DUPLICATE_THRESHOLD,
@@ -223,7 +260,7 @@ def stats(db: Session = Depends(get_db)):
 def demo_reset(db: Session = Depends(get_db)):
     """Tømmer alt unntatt produkter og seedartikler, slik at demoen kan kjøres på nytt."""
     db.execute(text("TRUNCATE pipeline_events, proposals, email_items, knowledge_articles RESTART IDENTITY"))
-    db.execute(text("SELECT seed_demo_articles()"))  # definert i db/seed.sql
+    db.execute(text("SELECT seed_demo_articles()"))  # definert i db/seed.sql (startartiklene er aktive)
     db.commit()
     # Tøm også innboksen, ellers ville workeren behandlet de gamle e-postene på nytt.
     try:

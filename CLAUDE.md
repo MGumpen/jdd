@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-A student project (IS-219, UiA) for JDD Utstyr, a Norwegian seller of vehicle lighting, car care and trailer and tractor accessories. It's a runnable Docker demo that turns fictional customer-service emails into anonymized knowledge articles, which an employee must approve. The spec is the source of truth: `docs/Prototypespesifikasjon JDD kunnskapsdatabase.pdf`. If something is unclear, ask instead of guessing. `README.md` (Norwegian) has the startup steps and the 5-minute demo script.
+A student project (IS-219, UiA) for JDD Utstyr, a Norwegian seller of vehicle lighting, car care and trailer and tractor accessories. It's a runnable Docker demo that turns fictional customer-service emails into anonymized knowledge articles, which an employee must approve. The spec is the source of truth: `docs/Prototypespesifikasjon JDD kunnskapsdatabase.pdf`. On top of it, the prototype implements the user stories from the group's Oppgave 4 (listed in `README.md`), notably story 3 (source and date on every answer) and story 5 (mark outdated articles). If something is unclear, ask instead of guessing. `README.md` (Norwegian) has the startup steps and the 5-minute demo script.
 
 Hard rules from the spec:
 - **All data is fictional.** No real customer data goes in.
 - **Raw email is never stored.** `worker.process_message` anonymizes in memory before the first DB write. The AI anonymization pass only sees text the regex rules have already cleaned.
-- **Nothing is written to `knowledge_articles` except in `api/app/review.py` (employee approval)** and in `seed_demo_articles()` in `db/seed.sql`.
+- **Nothing is written to `knowledge_articles` except in `api/app/review.py` (employee approval and outdated/restore marking)** and in `seed_demo_articles()` in `db/seed.sql`.
 - **Must work without `ANTHROPIC_API_KEY` (rule mode).** Every AI call (`anonymize.py`, `extract.py`, `chat.py`) catches exceptions and falls back to the rule-based path, noting the fallback in the event log. Keep it that way.
 - **The UI and user-facing strings are in Norwegian (bokmål).** Code comments are in Norwegian too, because the students must be able to explain the code. Keep the code simple and commented.
 
@@ -26,7 +26,7 @@ docker compose down -v                        # also drop the DB volume; init.sq
 curl -X POST localhost:8080/api/demo/reset    # clear emails, proposals, events and new articles, and empty Mailpit
 ```
 
-The DB-backed tests (`test_no_pii_in_database`, `test_seed_data_gives_at_least_three_updates`) skip themselves when the DB is unreachable. The PII test also skips when the DB has no data yet, so run `seed` first. Changes to `db/*.sql` only take effect after `down -v`.
+The DB-backed tests (`test_no_pii_in_database`, `test_seed_data_gives_at_least_three_updates`, `test_review.py`) skip themselves when the DB is unreachable. `test_review.py` writes inside a transaction that is rolled back. Don't approve as a name that appears in `test_pii` (e.g. "Kari"), because reviewer names end up in `pipeline_events`. The PII test also skips when the DB has no data yet, so run `seed` first. Changes to `db/*.sql` only take effect after `down -v`.
 
 ## Architecture
 
@@ -36,6 +36,7 @@ The DB-backed tests (`test_no_pii_in_database`, `test_seed_data_gives_at_least_t
 - **Thread format:** Mailpit delivers `Emne: <subject>` followed by the support reply, then `THREAD_SEPARATOR` (`----- Opprinnelig melding -----`), then the customer message. Text arrives with CRLF line endings, and `anonymize_rules` normalizes them. `seed/send_emails.py` and `tests/conftest.thread_text` must produce the same format.
 - **Rule extraction** (`extract.py`): the SKU `DEMO-\d{3}` or the full product name gives the product. The problem is the customer's first real paragraph, and the solution is the support reply minus greeting and signature. Sentences that contain placeholders are dropped. `sanitize()` reruns the anonymization rules on every stored field, including edits the employee makes when approving.
 - **Duplicate check / search:** `pg_trgm` `similarity(problem, :p)` against articles for the **same product only**. `score >= DUPLICATE_THRESHOLD` makes the proposal an `update`. `search.py` (used by `/api/articles` and the chatbot) combines `similarity`, `word_similarity` and ILIKE, and `chat.py` removes Norwegian stopwords before searching.
+- **Outdated and source:** `knowledge_articles.status` is `active` or `outdated` (with `outdated_by/at/reason`). The chatbot calls `search_articles(..., only_active=True)`, while staff search shows outdated articles last with a warning. Approving an `update` proposal reactivates an outdated article. `proposals.article_id` is set on approval and links an article to its source emails (`search.article_sources`). Events `outdated` and `restored` have `email_item_id = NULL`.
 - **Schema**: see `db/init.sql`. The ORM models in `models.py` mirror it; tables are never created from Python. There is no rejection-reason column, so the reason is stored in the `rejected` event's `detail`. Timestamps are naive UTC and serialized with a `Z` suffix.
 - **LLM calls** (`llm.py`) use the Anthropic SDK with `output_config={"effort": "low"}`, plus a JSON schema for extraction. Current models reject `temperature` and assistant prefill.
 

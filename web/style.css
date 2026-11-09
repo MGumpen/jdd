@@ -20,9 +20,13 @@
   --approved: #15803d;
   --rejected: #b91c1c;
   --failed: #7f1d1d;
+  --outdated: #9a3412;
+  --restored: #0f766e;
 }
 
 * { box-sizing: border-box; }
+/* «hidden» skal alltid skjule, også elementer som har display satt i CSS (f.eks. label). */
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -134,6 +138,8 @@ label > input, label > select, label > textarea { margin-top: .25rem; color: var
 .step-approved        { --c: var(--approved); }
 .step-rejected        { --c: var(--rejected); }
 .step-failed          { --c: var(--failed); }
+.step-outdated        { --c: var(--outdated); }
+.step-restored        { --c: var(--restored); }
 .pill, .pipeline li { background: var(--c, var(--muted)); }
 .event { border-left-color: var(--c, var(--border)); }
 
@@ -205,4 +211,23 @@ label > input, label > select, label > textarea { margin-top: .25rem; color: var
   .brand span { display: block; }
   .event { grid-template-columns: 1fr; gap: .2rem; }
   .bubble { max-width: 95%; }
+}
+
+/* ---------- Kilde, dato og status (brukerhistorie 3 og 5) ---------- */
+.pill.status-active { background: var(--approved); }
+.pill.status-outdated { background: var(--outdated); }
+.article.is-outdated { border-left: 4px solid var(--outdated); }
+.article.is-outdated summary strong { text-decoration: line-through; text-decoration-color: var(--outdated); }
+.outdated-note {
+  background: #fff1e8; border: 1px solid #f5c3a3; color: #5c2408;
+  border-radius: 8px; padding: .5rem .75rem; margin: .5rem 0; font-size: .9rem;
+}
+.source-list { margin: .2rem 0 .5rem; padding-left: 1.1rem; font-size: .9rem; }
+.source-list li { margin-bottom: .15rem; }
+.article-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; margin-top: .5rem; }
+.article-actions textarea { width: 100%; }
+.outdated-box { width: 100%; }
+.readonly-note {
+  background: #eef6ff; border: 1px solid #bcd6f5; border-radius: 8px;
+  padding: .5rem .75rem; margin-bottom: .75rem; font-size: .9rem;
 }

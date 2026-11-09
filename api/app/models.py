@@ -45,6 +45,11 @@ class KnowledgeArticle(Base):
     approved_by: Mapped[str] = mapped_column(String(100))
     approved_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # «active» eller «outdated». Utdaterte artikler brukes ikke av chatboten.
+    status: Mapped[str] = mapped_column(String(20), server_default="active")
+    outdated_by: Mapped[str | None] = mapped_column(String(100))
+    outdated_at: Mapped[datetime | None]
+    outdated_reason: Mapped[str | None] = mapped_column(Text)
 
     product: Mapped[Product | None] = relationship()
 
@@ -64,6 +69,8 @@ class Proposal(Base):
     proposal_type: Mapped[str] = mapped_column(String(20))  # new, update
     matched_article_id: Mapped[int | None] = mapped_column(ForeignKey("knowledge_articles.id"))
     similarity: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    # Settes ved godkjenning: artikkelen som ble laget eller oppdatert (kilden til artikkelen).
+    article_id: Mapped[int | None] = mapped_column(ForeignKey("knowledge_articles.id"))
     status: Mapped[str] = mapped_column(String(20), server_default="pending")
     reviewed_by: Mapped[str | None] = mapped_column(String(100))
     reviewed_at: Mapped[datetime | None]
@@ -71,7 +78,7 @@ class Proposal(Base):
 
     email_item: Mapped[EmailItem | None] = relationship()
     product: Mapped[Product | None] = relationship()
-    matched_article: Mapped[KnowledgeArticle | None] = relationship()
+    matched_article: Mapped[KnowledgeArticle | None] = relationship(foreign_keys=[matched_article_id])
 
 
 class PipelineEvent(Base):

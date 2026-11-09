@@ -27,6 +27,12 @@
   </nav>
 
   <main>
+    <!-- Navnet til den ansatte brukes både ved godkjenning og når en artikkel merkes som utdatert. -->
+    <label id="staff-bar" class="reviewer" hidden>
+      Ditt navn (ansatt i kundesenteret)
+      <input id="reviewer" autocomplete="name" placeholder="F.eks. Siri">
+    </label>
+
     <!-- 1. Dataflyt -->
     <section id="tab-flow" class="tab">
       <ol class="pipeline" aria-label="Stegene i dataflyten">
@@ -53,10 +59,6 @@
 
     <!-- 2. Godkjenning -->
     <section id="tab-review" class="tab" hidden>
-      <label class="reviewer">
-        Ditt navn (ansatt i kundesenteret)
-        <input id="reviewer" autocomplete="name" placeholder="F.eks. Kari">
-      </label>
       <div id="review-list"></div>
       <div id="review-detail" hidden></div>
     </section>
@@ -68,6 +70,8 @@
         <select id="kb-product" aria-label="Produkt"><option value="">Alle produkter</option></select>
         <button class="button">Søk</button>
       </form>
+      <p class="hint">Hver artikkel viser hvem som godkjente den, når, og hvilke e-poster den bygger på.
+        Utdatert informasjon kan merkes, så kollegene ikke bruker gamle svar. Chatboten bruker aldri utdaterte artikler.</p>
       <div id="kb-results"></div>
     </section>
 

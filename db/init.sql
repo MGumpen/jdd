@@ -31,7 +31,13 @@ CREATE TABLE knowledge_articles (
   version     INT NOT NULL DEFAULT 1,
   approved_by VARCHAR(100) NOT NULL,
   approved_at TIMESTAMP NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMP NOT NULL DEFAULT now()
+  updated_at  TIMESTAMP NOT NULL DEFAULT now(),
+  -- Brukerhistorie 5: en ansvarlig kan merke utdatert informasjon, så kollegene ikke bruker gamle svar.
+  -- Utdaterte artikler vises med advarsel i søket, men brukes aldri av chatboten.
+  status          VARCHAR(20) NOT NULL DEFAULT 'active',  -- active, outdated
+  outdated_by     VARCHAR(100),
+  outdated_at     TIMESTAMP,
+  outdated_reason TEXT
 );
 
 -- KI-forslag som venter på godkjenning
@@ -46,6 +52,9 @@ CREATE TABLE proposals (
   proposal_type       VARCHAR(20) NOT NULL,  -- new, update
   matched_article_id  INT REFERENCES knowledge_articles(id),
   similarity          NUMERIC(4,3),
+  -- Artikkelen forslaget ble til (ny) eller oppdaterte (update) ved godkjenning.
+  -- Brukerhistorie 3: gjør det mulig å vise hvilke e-poster en artikkel bygger på (kilde og dato).
+  article_id          INT REFERENCES knowledge_articles(id),
   status              VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending, approved, rejected
   reviewed_by         VARCHAR(100),
   reviewed_at         TIMESTAMP,
@@ -56,7 +65,7 @@ CREATE TABLE proposals (
 CREATE TABLE pipeline_events (
   id             INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   email_item_id  INT REFERENCES email_items(id),
-  step           VARCHAR(30) NOT NULL,  -- received, anonymized, extracted, duplicate_check, proposed, approved, rejected
+  step           VARCHAR(30) NOT NULL,  -- received, anonymized, extracted, duplicate_check, proposed, approved, rejected, outdated, restored
   detail         TEXT,
   created_at     TIMESTAMP NOT NULL DEFAULT now()
 );

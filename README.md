@@ -29,6 +29,9 @@ docker compose run --rm seed       # 3. i et nytt terminalvindu: sender 10 teste
 Stopp med `Ctrl+C` eller `docker compose down`. `docker compose down -v` sletter også
 databasen, slik at den bygges på nytt fra `db/init.sql` og `db/seed.sql` neste gang.
 
+> **Har du kjørt en eldre versjon før?** Skjemaet har fått nye kolonner (utdatert-status og
+> kilde). Kjør `docker compose down -v` én gang, og deretter `docker compose up --build`.
+
 ### KI-modus eller regelmodus
 
 Prototypen virker **uten API-nøkkel** (regelmodus). Da brukes regulære uttrykk og enkle regler.
@@ -68,11 +71,39 @@ e-post gjennom fem steg. Hvert steg skriver en rad i `pipeline_events`, som vise
 5. **Forslag.** Lagres som «venter». Ingenting skrives til `knowledge_articles` før en ansatt
    godkjenner. Ved godkjenning av en oppdatering øker artikkelens versjonsnummer.
 
+### Brukerhistoriene fra oppgave 4
+
+| # | Brukerhistorie | Slik vises det i prototypen |
+|---|---|---|
+| 1 | Gode svar fanges opp automatisk fra e-posten | Workeren henter e-post fra Mailpit (i drift: Outlook via Microsoft Graph) |
+| 2 | Søk med vanlige ord eller produktnavn, også med skrivefeil | *Kunnskapsbase*: trigram-søk, f.eks. «flimer lysbjelk» finner «Lysbjelke flimrer ved motorstart» |
+| 3 | Se kilde og dato på hvert svar | Hver artikkel viser status, hvem som godkjente, dato og hvilke e-poster den bygger på (lenke til den anonymiserte e-posten). Chatboten viser kilde og dato under svaret |
+| 4 | Godkjenne med ett klikk og redigere før publisering | *Godkjenning*: redigerbart forslag og én knapp |
+| 5 | Merke utdatert informasjon | *Kunnskapsbase*: **Merk som utdatert** med begrunnelse. Artikkelen vises med advarsel, og chatboten slutter å bruke den. Kan gjenopprettes. En ny godkjent oppdatering gjør den aktiv igjen |
+| 6 | Like svar oppdages | Duplikatsjekken foreslår **oppdatering** i stedet for ny artikkel |
+| 7 | Kundedata anonymiseres | Anonymisering før lagring. I drift må data lagres i EU/EØS |
+
+### API
+
+Full dokumentasjon på http://localhost:8000/docs. De viktigste endepunktene:
+
+| Metode | Sti | Hva |
+|---|---|---|
+| GET | `/api/proposals?status=pending` | Forslag som venter |
+| POST | `/api/proposals/{id}/approve` · `/reject` | Godkjenn eller avvis |
+| GET | `/api/articles?q=&product=` | Søk. Hver artikkel har `status` og `sources` (kilder) |
+| GET | `/api/articles/{id}` | Én artikkel med kilder |
+| POST | `/api/articles/{id}/outdated` | Merk som utdatert. Body: `reviewer`, `reason` |
+| POST | `/api/articles/{id}/restore` | Gjenopprett som aktiv. Body: `reviewer` |
+| POST | `/api/chat` | Chatbot. Bruker bare aktive artikler |
+| GET | `/api/events`, `/api/stats` | Dataflyt og tellere |
+| POST | `/api/demo/reset` | Nullstill demoen |
+
 | Mappe | Innhold |
 |---|---|
 | `db/` | `init.sql` (skjema) og `seed.sql` (10 produkter og 3 godkjente startartikler) |
 | `api/app/` | `main.py` (ruter), `worker.py` (pipelinen), `anonymize.py`, `extract.py`, `duplicates.py`, `search.py`, `chat.py`, `review.py` (godkjenning) |
-| `api/tests/` | Tester for anonymisering og duplikatsjekk |
+| `api/tests/` | Tester for anonymisering, duplikatsjekk og godkjenning/utdatert/kilde (`test_review.py`) |
 | `web/` | Nettsiden: `index.html`, `app.js`, `style.css` (ingen byggesteg) |
 | `seed/` | `send_emails.py` og 10 oppdiktede e-posttråder i `emails/` |
 
@@ -87,6 +118,14 @@ Testene sjekker blant annet at **ingen navn, e-postadresser, telefonnumre eller 
 testdataene** finnes etter anonymiseringen. Hver testepost har en liste `test_pii` med
 opplysningene som skal bort. `test_no_pii_in_database` sjekker hele databasen, så kjør den
 etter `seed`. Uten data hoppes den over.
+
+`test_review.py` tester godkjenning, kilder og utdatert-merking mot databasen, men i en
+transaksjon som rulles tilbake, så demo-dataene ikke endres.
+
+> Bruk et ansattnavn som **ikke** finnes i testdataene når du godkjenner (f.eks. «Siri»).
+> Personvern-testen leter etter de oppdiktede kundenavnene i hele databasen, også i
+> hendelsesloggen der godkjennerens navn står. Skriver du for eksempel «Kari», som også er
+> et kundenavn i testdataene, vil testen feile.
 
 ## Demo-manus (5 minutter)
 
@@ -113,10 +152,15 @@ til versjon 2. Åpne deretter «Blinklyset blinker for fort», der produktet ikk
 Godkjenn den som ny artikkel. Avvis ett forslag med en begrunnelse. Vis i *Dataflyt* at alt er
 logget med navn.
 
-**5. Bruk av kunnskapen (1 min).** *Kunnskapsbase*: søk etter «flimrer» og vis versjon 2 og
-hvem som godkjente. *Chatbot*: spør «Hvorfor flimrer lysbjelken når jeg starter bilen?». Svaret
-viser hvilken artikkel det bygger på. Spør så om noe som ikke finnes (f.eks. «Hva koster frakt?»);
-chatboten sier fra i stedet for å finne på et svar.
+**5. Bruk av kunnskapen (1 min).** *Kunnskapsbase*: søk etter «flimer» (med skrivefeil) og åpne
+artikkelen. Vis versjon 2, hvem som godkjente, datoen og **Kilde**: e-posten den bygger på.
+Klikk på e-posten for å se den anonymiserte teksten. *Chatbot*: spør «Hvorfor flimrer lysbjelken
+når jeg starter bilen?». Svaret viser artikkelen, hvem som godkjente og når. Spør så om noe som
+ikke finnes (f.eks. «Hva koster frakt?»); chatboten sier fra i stedet for å finne på et svar.
+
+**6. Utdatert informasjon (30 s, valgfritt).** I *Kunnskapsbase*: åpne «Arbeidslys dugger
+innvendig», trykk **Merk som utdatert** og skriv en begrunnelse. Artikkelen merkes rødt. Spør
+chatboten «Det er dugg inne i arbeidslyset»: den bruker ikke lenger det gamle svaret.
 
 **Avslutning.** Ingenting kommer inn i databasen uten at en ansatt har godkjent det, og
 personopplysninger fjernes før noe lagres. Trykk **Nullstill demo** for å kjøre demoen på nytt.
@@ -125,6 +169,9 @@ personopplysninger fjernes før noe lagres. Trykk **Nullstill demo** for å kjø
 
 - Prototypen er ikke koblet til JDDs ekte e-post, Multicase eller Shopify.
 - Ingen innlogging. Ansattnavnet skrives inn i nettleseren og lagres der.
+- Alle ansatte kan merke artikler som utdatert. I drift bør det være en ansvarlig per
+  produktområde, slik tjenesteplanen beskriver.
+- Utdatert-merket gjelder hele artikkelen. Tidligere versjoner lagres ikke (bare versjonsnummeret).
 - Regelbasert anonymisering fanger navn i hilsen og signatur, men ikke nødvendigvis et navn
   midt i en setning. KI-modus gir en ekstra vask, men en ansatt må alltid lese forslaget før
   godkjenning.

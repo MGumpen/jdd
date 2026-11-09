@@ -3,12 +3,15 @@
 - Godkjent «new»:    ny rad i knowledge_articles.
 - Godkjent «update»: den matchede artikkelen oppdateres og får version + 1.
 - Avvist:            forslaget merkes «rejected», begrunnelsen lagres i hendelsesloggen.
+- Utdatert:          en ansatt merker en artikkel som utdatert (eller gjenoppretter den).
+                     Utdaterte artikler vises med advarsel i søket og brukes ikke av chatboten.
 """
 
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from .anonymize import anonymize_rules
 from .extract import Extraction, sanitize
 from .models import KnowledgeArticle, Proposal, log_event
 
@@ -16,6 +19,14 @@ from .models import KnowledgeArticle, Proposal, log_event
 def utcnow() -> datetime:
     """Databasen lagrer tidspunkter i UTC uten tidssone (samme som now() i Postgres)."""
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _reactivate(article: KnowledgeArticle) -> None:
+    """Fjerner utdatert-merket, f.eks. når artikkelen får ny, godkjent kunnskap."""
+    article.status = "active"
+    article.outdated_by = None
+    article.outdated_at = None
+    article.outdated_reason = None
 
 
 class ReviewError(Exception):
@@ -67,6 +78,10 @@ def approve(db: Session, proposal_id: int, reviewer: str, edits: dict) -> Knowle
         article.approved_at = now
         article.updated_at = now
         detail = f"Godkjent av {reviewer}. Artikkel #{article.id} oppdatert til versjon {article.version}."
+        # Ny kunnskap erstatter den gamle, så en utdatert artikkel blir aktiv igjen.
+        if article.status == "outdated":
+            _reactivate(article)
+            detail += " Artikkelen var merket som utdatert og er nå aktiv igjen."
     else:
         article = KnowledgeArticle(
             product_id=proposal.product_id,
@@ -84,6 +99,7 @@ def approve(db: Session, proposal_id: int, reviewer: str, edits: dict) -> Knowle
         detail = f"Godkjent av {reviewer}. Ny artikkel #{article.id} lagt i kunnskapsdatabasen."
 
     proposal.status = "approved"
+    proposal.article_id = article.id  # kilden: denne e-posten ligger bak artikkelen
     proposal.reviewed_by = reviewer
     proposal.reviewed_at = now
     log_event(db, proposal.email_item_id, "approved", detail)
@@ -100,3 +116,38 @@ def reject(db: Session, proposal_id: int, reviewer: str, reason: str) -> Proposa
     log_event(db, proposal.email_item_id, "rejected", f"Avvist av {reviewer}. Begrunnelse: {reason}")
     db.commit()
     return proposal
+
+
+def _article(db: Session, article_id: int) -> KnowledgeArticle:
+    article = db.get(KnowledgeArticle, article_id, with_for_update=True)
+    if article is None:
+        raise ReviewError("Artikkelen finnes ikke", 404)
+    return article
+
+
+def mark_outdated(db: Session, article_id: int, reviewer: str, reason: str) -> KnowledgeArticle:
+    """Brukerhistorie 5: merk utdatert informasjon, så kollegene ikke bruker gamle svar."""
+    article = _article(db, article_id)
+    if article.status == "outdated":
+        raise ReviewError("Artikkelen er allerede merket som utdatert", 409)
+    # Begrunnelsen kjøres gjennom anonymiseringsreglene, som alle andre felt den ansatte skriver.
+    reason = anonymize_rules(reason)[0].strip()
+    article.status = "outdated"
+    article.outdated_by = reviewer
+    article.outdated_at = utcnow()
+    article.outdated_reason = reason
+    log_event(db, None, "outdated",
+              f"Artikkel #{article.id} «{article.title}» merket som utdatert av {reviewer}. Begrunnelse: {reason}")
+    db.commit()
+    return article
+
+
+def restore(db: Session, article_id: int, reviewer: str) -> KnowledgeArticle:
+    """Angrer utdatert-merket, f.eks. hvis det ble satt ved en feil."""
+    article = _article(db, article_id)
+    if article.status != "outdated":
+        raise ReviewError("Artikkelen er ikke merket som utdatert", 409)
+    _reactivate(article)
+    log_event(db, None, "restored", f"Artikkel #{article.id} «{article.title}» gjenopprettet av {reviewer}.")
+    db.commit()
+    return article

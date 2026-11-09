@@ -4,7 +4,15 @@ Poengsummen er den høyeste av:
 - similarity mot tittel og problem (hele teksten ligner på søket), og
 - word_similarity (søket ligner på en bit av artikkelteksten).
 I tillegg tas treff med ILIKE (vanlig delstreng-søk) alltid med.
+
+Utdaterte artikler vises sist med advarsel i søket for ansatte, men chatboten
+ber bare om aktive artikler (only_active=True).
+
+Hver artikkel får med seg kildene sine: e-postene (anonymisert) som ble godkjent
+inn i artikkelen, med dato og hvem som godkjente (brukerhistorie 3).
 """
+
+from datetime import datetime
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -21,11 +29,51 @@ _SCORE = """
 """
 
 
-def search_articles(db: Session, q: str = "", product_id: int | None = None, limit: int = 50) -> list[dict]:
+def iso(value: datetime | None) -> str | None:
+    """Tidspunkter lagres i UTC; «Z» gjør at nettleseren viser lokal tid."""
+    return value.isoformat(timespec="seconds") + "Z" if value else None
+
+
+def article_sources(db: Session, article_ids: list[int]) -> dict[int, list[dict]]:
+    """Henter kildene (godkjente forslag og e-postene bak dem) for flere artikler på én gang.
+    Startartiklene fra seed.sql har ingen e-post som kilde."""
+    if not article_ids:
+        return {}
+    rows = db.execute(
+        text(
+            """
+            SELECT p.article_id, p.id AS proposal_id, p.email_item_id, p.proposal_type,
+                   p.reviewed_by, p.reviewed_at, e.created_at AS received_at
+            FROM proposals p
+            LEFT JOIN email_items e ON e.id = p.email_item_id
+            WHERE p.status = 'approved' AND p.article_id = ANY(:ids)
+            ORDER BY p.reviewed_at, p.id
+            """
+        ),
+        {"ids": list(article_ids)},
+    ).mappings()
+    sources: dict[int, list[dict]] = {i: [] for i in article_ids}
+    for row in rows:
+        sources[row["article_id"]].append({
+            "proposal_id": row["proposal_id"],
+            "email_item_id": row["email_item_id"],
+            "proposal_type": row["proposal_type"],
+            "reviewed_by": row["reviewed_by"],
+            "reviewed_at": iso(row["reviewed_at"]),
+            "received_at": iso(row["received_at"]),
+        })
+    return sources
+
+
+def search_articles(
+    db: Session, q: str = "", product_id: int | None = None, limit: int = 50, only_active: bool = False
+) -> list[dict]:
     q = (q or "").strip()
     where = []
     params: dict = {"q": q, "limit": limit}
 
+    if only_active:
+        where.append("a.status = 'active'")
     if product_id is not None:
         where.append("a.product_id = :product_id")
         params["product_id"] = product_id
@@ -39,22 +87,26 @@ def search_articles(db: Session, q: str = "", product_id: int | None = None, lim
     sql = f"""
         SELECT a.id, a.title, a.problem, a.solution, a.tags, a.version,
                a.approved_by, a.approved_at, a.updated_at, a.product_id,
+               a.status, a.outdated_by, a.outdated_at, a.outdated_reason,
                p.sku AS product_sku, p.name AS product_name,
                {_SCORE if q else "0"} AS score
         FROM knowledge_articles a
         LEFT JOIN products p ON p.id = a.product_id
         {"WHERE " + " AND ".join(where) if where else ""}
-        ORDER BY score DESC, a.updated_at DESC
+        -- Aktive artikler først, så de beste treffene, så de nyeste.
+        ORDER BY (a.status = 'active') DESC, score DESC, a.updated_at DESC
         LIMIT :limit
     """
     rows = db.execute(text(sql), params).mappings().all()
+    sources = article_sources(db, [row["id"] for row in rows])
     return [
         {
             **row,
             "score": round(float(row["score"]), 3),
-            # Tidspunkter lagres i UTC; «Z» gjør at nettleseren viser lokal tid.
-            "approved_at": row["approved_at"].isoformat(timespec="seconds") + "Z",
-            "updated_at": row["updated_at"].isoformat(timespec="seconds") + "Z",
+            "approved_at": iso(row["approved_at"]),
+            "updated_at": iso(row["updated_at"]),
+            "outdated_at": iso(row["outdated_at"]),
+            "sources": sources[row["id"]],
         }
         for row in rows
     ]

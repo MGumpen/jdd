@@ -1,6 +1,7 @@
 """Chatbot-demo for kunder: svarer bare ut fra godkjente artikler.
 
 1. Finn de 3 mest relevante artiklene (samme søk som kunnskapsbasen).
+   Artikler som er merket som utdatert, brukes aldri.
 2. KI-modus: modellen svarer kun ut fra artiklene og sier fra hvis svaret ikke finnes.
    Regelmodus: returner løsningen fra beste artikkel.
 Svaret viser alltid hvilke artikler det bygger på.
@@ -41,7 +42,7 @@ def search_terms(question: str) -> str:
 
 
 def answer(db: Session, question: str) -> dict:
-    articles = search_articles(db, search_terms(question), limit=3)
+    articles = search_articles(db, search_terms(question), limit=3, only_active=True)
     sources = [
         {
             "id": a["id"],
@@ -49,6 +50,10 @@ def answer(db: Session, question: str) -> dict:
             "product_name": a["product_name"],
             "version": a["version"],
             "score": a["score"],
+            # Kilde og dato, så kunden og den ansatte ser hvor ferskt svaret er.
+            "approved_by": a["approved_by"],
+            "updated_at": a["updated_at"],
+            "source_count": len(a["sources"]),
         }
         for a in articles
     ]

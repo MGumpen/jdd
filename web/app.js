@@ -62,6 +62,8 @@ const STEPS = {
   approved: "Godkjent",
   rejected: "Avvist",
   failed: "Feil",
+  outdated: "Utdatert",
+  restored: "Gjenopprettet",
 };
 const stepPill = (step) => `<span class="pill step-${esc(step)}">${esc(STEPS[step] || step)}</span>`;
 
@@ -76,6 +78,7 @@ async function loadProducts() {
 // ------------------------------------------------------------- Faner
 
 let activeTab = "flow";
+let returnToKb = false; // settes når et forslag åpnes fra en artikkels kildeliste
 
 // Fanene har egne adresser (#dataflyt, #godkjenning, …), så tilbakeknappen og bokmerker virker.
 const TAB_HASH = { flow: "dataflyt", review: "godkjenning", kb: "kunnskapsbase", chat: "chatbot" };
@@ -87,6 +90,8 @@ function showTab(name) {
   }
   document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   document.querySelectorAll(".tab").forEach((s) => (s.hidden = s.id !== `tab-${name}`));
+  // Navnefeltet trengs bare der den ansatte godkjenner eller merker artikler som utdatert.
+  $("#staff-bar").hidden = !(name === "review" || name === "kb");
   if (name === "review") loadReviewList();
   if (name === "kb") searchArticles();
   if (name === "chat") $("#chat-input").focus();
@@ -104,6 +109,8 @@ function openFromHash() {
   const hash = location.hash.slice(1);
   const proposal = hash.match(/^forslag-(\d+)$/);
   if (proposal) {
+    // Kom vi fra en kilde-lenke i Kunnskapsbase, skal «Tilbake» gå dit igjen.
+    returnToKb = activeTab === "kb";
     showTab("review");
     openProposal(proposal[1]);
     return;
@@ -137,6 +144,7 @@ function renderStats(s) {
     ["Godkjent", s.proposals.approved],
     ["Avvist", s.proposals.rejected],
     ["Artikler i databasen", s.articles],
+    ["Merket utdatert", s.articles_outdated],
     ["Feilet", s.emails_failed],
   ];
   $("#stats").innerHTML = tiles
@@ -255,6 +263,13 @@ async function openProposal(id) {
     .concat(products.map((x) => `<option value="${x.id}" ${p.product?.id === x.id ? "selected" : ""}>${esc(x.name)} (${esc(x.sku)})</option>`))
     .join("");
   const m = p.matched_article;
+  const done = p.status !== "pending"; // allerede godkjent/avvist: bare vis, ikke rediger
+  const ro = done ? "disabled" : "";
+  const statusNote = done
+    ? `<div class="readonly-note">${p.status === "approved" ? "Godkjent" : "Avvist"} av ${esc(p.reviewed_by)}, ${formatDate(p.reviewed_at)}.
+        ${p.article_id ? `Ble til <a href="#kunnskapsbase" data-article="${p.article_id}">artikkel #${p.article_id}</a>.` : ""}
+        Forslaget vises slik det ble lagret.</div>`
+    : "";
 
   history.replaceState(null, "", `#forslag-${p.id}`);
   $("#review-list").hidden = true;
@@ -276,12 +291,13 @@ async function openProposal(id) {
 
       <form class="card form-grid" id="proposal-form">
         <h3>${m ? "Forslag til oppdatert artikkel" : "Forslag til ny artikkel"}</h3>
-        <label>Tittel <input name="title" value="${esc(p.title)}" maxlength="200" required></label>
-        <label>Produkt <select name="product_id">${productOptions}</select></label>
-        <label>Problem <textarea name="problem" rows="3" required>${esc(p.problem)}</textarea></label>
-        <label>Løsning <textarea name="solution" rows="7" required>${esc(p.solution)}</textarea></label>
-        <label>Stikkord <input name="tags" value="${esc(p.tags || "")}" maxlength="300"></label>
-        <div class="form-actions">
+        ${statusNote}
+        <label>Tittel <input name="title" value="${esc(p.title)}" maxlength="200" required ${ro}></label>
+        <label>Produkt <select name="product_id" ${ro}>${productOptions}</select></label>
+        <label>Problem <textarea name="problem" rows="3" required ${ro}>${esc(p.problem)}</textarea></label>
+        <label>Løsning <textarea name="solution" rows="7" required ${ro}>${esc(p.solution)}</textarea></label>
+        <label>Stikkord <input name="tags" value="${esc(p.tags || "")}" maxlength="300" ${ro}></label>
+        <div class="form-actions" ${done ? "hidden" : ""}>
           <button type="submit" class="button approve">${m ? "Godkjenn og oppdater artikkel" : "Godkjenn som ny artikkel"}</button>
           <button type="button" class="button reject" id="reject-toggle">Avvis …</button>
         </div>
@@ -296,7 +312,8 @@ async function openProposal(id) {
           ? `<div class="card">
               <h3>Eksisterende artikkel #${m.id} (versjon ${m.version})</h3>
               <div class="similarity">${percent(p.similarity)} likhet</div>
-              <div class="muted">Godkjenning oppdaterer denne artikkelen til versjon ${m.version + 1}.</div>
+              ${done ? "" : `<div class="muted">Godkjenning oppdaterer denne artikkelen til versjon ${m.version + 1}.</div>`}
+              ${m.status === "outdated" ? `<div class="outdated-note"><strong>Merket som utdatert</strong> av ${esc(m.outdated_by)}: ${esc(m.outdated_reason)}${done ? "" : "<br>Godkjenning gjør artikkelen aktiv igjen."}</div>` : ""}
               <div class="field-label">Tittel</div><div>${esc(m.title)}</div>
               <div class="field-label">Problem</div><div>${esc(m.problem)}</div>
               <div class="field-label">Løsning</div><div style="white-space:pre-wrap">${esc(m.solution)}</div>
@@ -307,7 +324,19 @@ async function openProposal(id) {
       }
     </div>`;
 
-  $("#back-btn").addEventListener("click", loadReviewList);
+  $("#back-btn").addEventListener("click", () => {
+    if (returnToKb) {
+      returnToKb = false;
+      location.hash = "#kunnskapsbase";
+    } else {
+      loadReviewList();
+    }
+  });
+  // Lenken «artikkel #N» i et godkjent forslag åpner artikkelen i Kunnskapsbase.
+  detail.querySelectorAll("[data-article]").forEach((a) =>
+    a.addEventListener("click", () => (openArticleId = Number(a.dataset.article)))
+  );
+  if (done) return; // ingen knapper å koble opp
   $("#reject-toggle").addEventListener("click", () => {
     $("#reject-box").hidden = !$("#reject-box").hidden;
     $("#reject-reason").focus();
@@ -360,6 +389,46 @@ async function openProposal(id) {
 
 // ------------------------------------------------------ 3. Kunnskapsbase
 
+let openArticleId = null; // artikkelen som skal stå åpen etter at listen tegnes på nytt
+
+/** Kilder: e-postene som er godkjent inn i artikkelen, med dato og hvem som godkjente. */
+function sourcesHtml(a) {
+  if (a.sources.length === 0) {
+    return `<p class="muted">Startartikkel fra kundesenteret (ingen e-post som kilde).</p>`;
+  }
+  return `<ul class="source-list">${a.sources
+    .map(
+      (s) => `<li><a href="#forslag-${s.proposal_id}">E-post #${s.email_item_id}</a>
+        (mottatt ${formatDate(s.received_at)}) · ${s.proposal_type === "update" ? "oppdaterte artikkelen" : "ny artikkel"}
+        · godkjent av ${esc(s.reviewed_by)} ${formatDate(s.reviewed_at)}</li>`
+    )
+    .join("")}</ul>`;
+}
+
+function statusPill(a) {
+  return a.status === "outdated"
+    ? `<span class="pill status-outdated">Utdatert</span>`
+    : `<span class="pill status-active">Aktiv</span>`;
+}
+
+/** Knapper for å merke som utdatert eller gjenopprette (brukerhistorie 5). */
+function articleActionsHtml(a) {
+  if (a.status === "outdated") {
+    return `<div class="outdated-note"><strong>Utdatert:</strong> ${esc(a.outdated_reason)}<br>
+        Merket av ${esc(a.outdated_by)}, ${formatDate(a.outdated_at)}. Chatboten bruker ikke denne artikkelen.</div>
+      <div class="article-actions"><button type="button" class="button ghost" data-restore="${a.id}">Gjenopprett som aktiv</button></div>`;
+  }
+  return `<div class="article-actions">
+      <button type="button" class="button danger" data-outdated-toggle="${a.id}">Merk som utdatert …</button>
+      <div class="outdated-box" id="outdated-box-${a.id}" hidden>
+        <label>Hvorfor er artikkelen utdatert?
+          <textarea rows="2" id="outdated-reason-${a.id}" placeholder="F.eks. «Produktet har fått ny kabelsett-versjon, svaret gjelder ikke lenger»"></textarea>
+        </label>
+        <div class="form-actions"><button type="button" class="button reject" data-outdated="${a.id}">Bekreft utdatert</button></div>
+      </div>
+    </div>`;
+}
+
 async function searchArticles() {
   const params = new URLSearchParams({ q: $("#kb-q").value.trim() });
   if ($("#kb-product").value) params.set("product", $("#kb-product").value);
@@ -371,22 +440,80 @@ async function searchArticles() {
     }
     $("#kb-results").innerHTML = `<div class="articles">${articles
       .map(
-        (a) => `<details class="card article">
+        (a) => `<details class="card article ${a.status === "outdated" ? "is-outdated" : ""}" data-id="${a.id}" ${a.id === openArticleId ? "open" : ""}>
           <summary>
-            <strong>${esc(a.title)}</strong>
-            <div class="meta">${esc(a.product_name || "Uten produkt")} · versjon ${a.version} · godkjent av ${esc(a.approved_by)} · ${formatDate(a.updated_at)}</div>
+            <strong>${esc(a.title)}</strong> ${statusPill(a)}
+            <div class="meta">${esc(a.product_name || "Uten produkt")} · versjon ${a.version} · godkjent av ${esc(a.approved_by)} · ${formatDate(a.updated_at)}
+              · ${a.sources.length ? `${a.sources.length} e-post${a.sources.length > 1 ? "er" : ""} som kilde` : "startartikkel"}</div>
           </summary>
           <div class="body">
             <div class="field-label">Problem</div><p>${esc(a.problem)}</p>
             <div class="field-label">Løsning</div><p>${esc(a.solution)}</p>
             <div class="field-label">Stikkord</div><p>${esc(a.tags || "–")}</p>
+            <div class="field-label">Kilde</div>${sourcesHtml(a)}
+            ${articleActionsHtml(a)}
           </div>
         </details>`
       )
       .join("")}</div>`;
+    connectArticleActions();
   } catch (err) {
     $("#kb-results").innerHTML = `<div class="empty card">${esc(err.message)}</div>`;
   }
+}
+
+function connectArticleActions() {
+  const results = $("#kb-results");
+  results.querySelectorAll("[data-outdated-toggle]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const box = $(`#outdated-box-${b.dataset.outdatedToggle}`);
+      box.hidden = !box.hidden;
+      $(`#outdated-reason-${b.dataset.outdatedToggle}`).focus();
+    })
+  );
+  results.querySelectorAll("[data-outdated]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const id = Number(b.dataset.outdated);
+      const reviewer = reviewerName();
+      if (!reviewer) return;
+      const reason = $(`#outdated-reason-${id}`).value.trim();
+      if (!reason) {
+        $(`#outdated-reason-${id}`).focus();
+        return toast("Skriv hvorfor artikkelen er utdatert.", true);
+      }
+      try {
+        await api(`/api/articles/${id}/outdated`, { method: "POST", body: { reviewer, reason } });
+        toast(`Artikkel #${id} er merket som utdatert. Chatboten bruker den ikke lenger.`);
+        openArticleId = id;
+        searchArticles();
+        refreshFlow();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    })
+  );
+  results.querySelectorAll("[data-restore]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const id = Number(b.dataset.restore);
+      const reviewer = reviewerName();
+      if (!reviewer) return;
+      try {
+        await api(`/api/articles/${id}/restore`, { method: "POST", body: { reviewer } });
+        toast(`Artikkel #${id} er aktiv igjen.`);
+        openArticleId = id;
+        searchArticles();
+        refreshFlow();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    })
+  );
+  // Husk hvilken artikkel som er åpen, så den forblir åpen når listen oppdateres.
+  results.querySelectorAll("details.article").forEach((d) =>
+    d.addEventListener("toggle", () => {
+      if (d.open) openArticleId = Number(d.dataset.id);
+    })
+  );
 }
 
 let searchTimer;
@@ -419,7 +546,10 @@ async function ask(question) {
     const result = await api("/api/chat", { method: "POST", body: { question } });
     const sources = result.sources.length
       ? `<div class="sources">Svaret bygger på:<ul>${result.sources
-          .map((s) => `<li>Artikkel #${s.id}: ${esc(s.title)} (${esc(s.product_name || "uten produkt")}, versjon ${s.version})</li>`)
+          .map(
+            (s) => `<li>Artikkel #${s.id}: ${esc(s.title)} (${esc(s.product_name || "uten produkt")}, versjon ${s.version}).
+              Godkjent av ${esc(s.approved_by)}, ${formatDate(s.updated_at)}${s.source_count ? `, bygger på ${s.source_count} e-post${s.source_count > 1 ? "er" : ""} fra kundeservice` : ""}.</li>`
+          )
           .join("")}</ul></div>`
       : `<div class="sources">Ingen artikler brukt.</div>`;
     pending.className = "bubble bot";
