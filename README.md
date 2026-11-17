@@ -30,7 +30,8 @@ Stopp med `Ctrl+C` eller `docker compose down`. `docker compose down -v` sletter
 databasen, slik at den bygges på nytt fra `db/init.sql` og `db/seed.sql` neste gang.
 
 > **Har du kjørt en eldre versjon før?** Skjemaet har fått nye kolonner (utdatert-status og
-> kilde). Kjør `docker compose down -v` én gang, og deretter `docker compose up --build`.
+> kilde) og en ny tabell (`article_versions`, tidligere versjoner av artiklene). Kjør
+> `docker compose down -v` én gang, og deretter `docker compose up --build`.
 
 ### KI-modus eller regelmodus
 
@@ -40,7 +41,8 @@ Claude (`LLM_MODEL`, standard `claude-sonnet-5`) til:
 
 - en ekstra anonymiseringsrunde etter reglene (modellen ser aldri rå tekst),
 - uttrekk av produkt, problem og løsning, og
-- chatbot-svar formulert ut fra artiklene.
+- chatbot-svar formulert ut fra artiklene. Modellen oppgir hvilke artikler den brukte, og bare
+  de vises som kilde. Finner den ikke svaret, vises ingen kilder.
 
 Hvis et KI-kall feiler, brukes regelmodus automatisk, og det står i hendelsesloggen.
 Merket øverst til høyre på nettsiden viser hvilken modus som er aktiv.
@@ -61,15 +63,25 @@ Workeren sjekker innboksen hvert 10. sekund (`POLL_INTERVAL_SECONDS`) og kjører
 e-post gjennom fem steg. Hvert steg skriver en rad i `pipeline_events`, som vises i Dataflyt-fanen:
 
 1. **Mottatt.** E-posten hentes fra Mailpit. Meldinger som allerede er behandlet, hoppes over.
-2. **Anonymisert.** Navn i hilsen og signatur, e-post, telefon, ordrenummer og adresse
-   erstattes med `[NAVN]`, `[E-POST]`, `[TELEFON]`, `[ORDRE]` og `[ADRESSE]`.
-   Dette skjer *før* noe lagres; rå e-post lagres aldri.
+2. **Anonymisert.** Navn i hilsen og signatur, e-post, telefon, ordrenummer, adresse,
+   registreringsnummer, fødselsnummer og kontonummer erstattes med `[NAVN]`, `[E-POST]`,
+   `[TELEFON]`, `[ORDRE]`, `[ADRESSE]`, `[REGNR]`, `[FØDSELSNR]` og `[KONTONR]`.
+   Dette skjer *før* noe lagres; rå e-post lagres aldri. Teknisk informasjon skal stå urørt:
+   postnummer fjernes bare i en adresse (så «2018 Toyota Hilux» og «9600 Lumen» blir stående),
+   og et 8-sifret tall etter «varenummer» regnes ikke som telefonnummer.
 3. **Uttrekk.** Produkt (SKU eller produktnavn), problem og løsning.
-4. **Duplikatsjekk.** `pg_trgm` sammenligner problemet med artikler for samme produkt.
-   Er likheten minst `DUPLICATE_THRESHOLD` (0,4), foreslås en **oppdatering** av den
-   artikkelen. Ellers foreslås en **ny** artikkel.
+4. **Duplikatsjekk.** `pg_trgm` sammenligner problemet med artikler for samme produkt
+   (eller alle artikler, hvis produktet ikke ble gjenkjent). Er likheten minst
+   `DUPLICATE_THRESHOLD` (0,4), foreslås en **oppdatering** av den artikkelen. Ellers
+   foreslås en **ny** artikkel.
 5. **Forslag.** Lagres som «venter». Ingenting skrives til `knowledge_articles` før en ansatt
-   godkjenner. Ved godkjenning av en oppdatering øker artikkelens versjonsnummer.
+   godkjenner. Ved godkjenning av en oppdatering lagres den gamle teksten i `article_versions`,
+   og artikkelens versjonsnummer øker.
+
+Etter hver godkjenning kjøres duplikatsjekken **på nytt for alle andre ventende forslag**. Kommer
+to e-poster om samme problem, blir den andre da en oppdatering av artikkelen den første ble til,
+i stedet for en dublett. Mens forslagene venter, viser *Godkjenning* «Lignende forslag venter».
+Mener den ansatte at et treff er feil, kan forslaget godkjennes med **Lag ny artikkel i stedet**.
 
 ### Brukerhistoriene fra oppgave 4
 
@@ -77,10 +89,10 @@ e-post gjennom fem steg. Hvert steg skriver en rad i `pipeline_events`, som vise
 |---|---|---|
 | 1 | Gode svar fanges opp automatisk fra e-posten | Workeren henter e-post fra Mailpit (i drift: Outlook via Microsoft Graph) |
 | 2 | Søk med vanlige ord eller produktnavn, også med skrivefeil | *Kunnskapsbase*: trigram-søk, f.eks. «flimer lysbjelk» finner «Lysbjelke flimrer ved motorstart» |
-| 3 | Se kilde og dato på hvert svar | Hver artikkel viser status, hvem som godkjente, dato og hvilke e-poster den bygger på (lenke til den anonymiserte e-posten). Chatboten viser kilde og dato under svaret |
+| 3 | Se kilde og dato på hvert svar | Hver artikkel viser status, hvem som godkjente, dato, hvilke e-poster den bygger på (lenke til den anonymiserte e-posten) og tidligere versjoner. Chatboten viser kilde og dato under svaret (kunden ser «godkjent av kundesenteret», ikke navnet på den ansatte) |
 | 4 | Godkjenne med ett klikk og redigere før publisering | *Godkjenning*: redigerbart forslag og én knapp |
 | 5 | Merke utdatert informasjon | *Kunnskapsbase*: **Merk som utdatert** med begrunnelse. Artikkelen vises med advarsel, og chatboten slutter å bruke den. Kan gjenopprettes. En ny godkjent oppdatering gjør den aktiv igjen |
-| 6 | Like svar oppdages | Duplikatsjekken foreslår **oppdatering** i stedet for ny artikkel |
+| 6 | Like svar oppdages | Duplikatsjekken foreslår **oppdatering** i stedet for ny artikkel, viser lignende ventende forslag og sjekker dem på nytt etter hver godkjenning |
 | 7 | Kundedata anonymiseres | Anonymisering før lagring. I drift må data lagres i EU/EØS |
 
 ### API
@@ -90,9 +102,10 @@ Full dokumentasjon på http://localhost:8000/docs. De viktigste endepunktene:
 | Metode | Sti | Hva |
 |---|---|---|
 | GET | `/api/proposals?status=pending` | Forslag som venter |
-| POST | `/api/proposals/{id}/approve` · `/reject` | Godkjenn eller avvis |
-| GET | `/api/articles?q=&product=` | Søk. Hver artikkel har `status` og `sources` (kilder) |
-| GET | `/api/articles/{id}` | Én artikkel med kilder |
+| GET | `/api/proposals/{id}` | Ett forslag med e-post, hendelseslogg og `similar_pending` (lignende ventende forslag) |
+| POST | `/api/proposals/{id}/approve` · `/reject` | Godkjenn eller avvis. `as_new: true` lager ny artikkel i stedet for oppdatering |
+| GET | `/api/articles?q=&product=` | Søk. Hver artikkel har `status`, `sources` (kilder) og `previous_versions` |
+| GET | `/api/articles/{id}` | Én artikkel med kilder og tidligere versjoner |
 | POST | `/api/articles/{id}/outdated` | Merk som utdatert. Body: `reviewer`, `reason` |
 | POST | `/api/articles/{id}/restore` | Gjenopprett som aktiv. Body: `reviewer` |
 | POST | `/api/chat` | Chatbot. Bruker bare aktive artikler |
@@ -154,8 +167,9 @@ logget med navn.
 
 **5. Bruk av kunnskapen (1 min).** *Kunnskapsbase*: søk etter «flimer» (med skrivefeil) og åpne
 artikkelen. Vis versjon 2, hvem som godkjente, datoen og **Kilde**: e-posten den bygger på.
+Under **Tidligere versjoner** ligger versjon 1, så ingen kunnskap er tapt.
 Klikk på e-posten for å se den anonymiserte teksten. *Chatbot*: spør «Hvorfor flimrer lysbjelken
-når jeg starter bilen?». Svaret viser artikkelen, hvem som godkjente og når. Spør så om noe som
+når jeg starter bilen?». Svaret viser artikkelen og når kundesenteret godkjente den. Spør så om noe som
 ikke finnes (f.eks. «Hva koster frakt?»); chatboten sier fra i stedet for å finne på et svar.
 
 **6. Utdatert informasjon (30 s, valgfritt).** I *Kunnskapsbase*: åpne «Arbeidslys dugger
@@ -171,9 +185,10 @@ personopplysninger fjernes før noe lagres. Trykk **Nullstill demo** for å kjø
 - Ingen innlogging. Ansattnavnet skrives inn i nettleseren og lagres der.
 - Alle ansatte kan merke artikler som utdatert. I drift bør det være en ansvarlig per
   produktområde, slik tjenesteplanen beskriver.
-- Utdatert-merket gjelder hele artikkelen. Tidligere versjoner lagres ikke (bare versjonsnummeret).
-- Regelbasert anonymisering fanger navn i hilsen og signatur, men ikke nødvendigvis et navn
-  midt i en setning. KI-modus gir en ekstra vask, men en ansatt må alltid lese forslaget før
-  godkjenning.
+- Utdatert-merket gjelder hele artikkelen. Tidligere versjoner lagres og kan leses, men kan
+  ikke gjenopprettes med ett klikk.
+- Regelbasert anonymisering fanger navn i hilsen og signatur, men ikke et navn midt i en
+  setning («Det er Per Hansen her») eller et postnummer som står alene midt i en setning.
+  KI-modus gir en ekstra vask, men en ansatt må alltid lese forslaget før godkjenning.
 - Regelmodus kopierer kundens og kundeservicens formuleringer. I KI-modus skrives problem og
   løsning mer generelt.

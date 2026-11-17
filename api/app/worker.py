@@ -20,6 +20,7 @@ from . import config
 from .anonymize import anonymize
 from .db import SessionLocal
 from .duplicates import check as check_duplicates
+from .duplicates import describe as describe_duplicates
 from .extract import extract
 from .models import EmailItem, Product, Proposal, log_event
 
@@ -107,20 +108,9 @@ def process_message(msg_id: str) -> None:
 
             # Steg 4: duplikatsjekk
             step = "duplicate_check"
+            # Er produktet ukjent, sammenlignes problemet med artikler for alle produkter.
             dup = check_duplicates(db, result.problem, product.id if product else None)
-            if dup.proposal_type == "update":
-                dup_detail = (
-                    f"Ligner artikkel #{dup.matched_article_id} ({dup.similarity:.0%} likhet ≥ "
-                    f"{config.DUPLICATE_THRESHOLD:.0%}). Foreslår oppdatering."
-                )
-            elif dup.similarity is not None:
-                dup_detail = (
-                    f"Nærmeste artikkel #{dup.best_article_id} har {dup.similarity:.0%} likhet "
-                    f"(under {config.DUPLICATE_THRESHOLD:.0%}). Foreslår ny artikkel."
-                )
-            else:
-                dup_detail = "Ingen artikler å sammenligne med for dette produktet. Foreslår ny artikkel."
-            log_event(db, item.id, "duplicate_check", dup_detail)
+            log_event(db, item.id, "duplicate_check", describe_duplicates(dup))
 
             # Steg 5: forslag
             step = "proposed"

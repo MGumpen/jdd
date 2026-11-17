@@ -40,6 +40,23 @@ CREATE TABLE knowledge_articles (
   outdated_reason TEXT
 );
 
+-- Tidligere versjoner av artiklene. Når en oppdatering godkjennes, lagres den gamle
+-- teksten her før artikkelen overskrives, så ingen kunnskap forsvinner.
+CREATE TABLE article_versions (
+  id           INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  article_id   INT NOT NULL REFERENCES knowledge_articles(id),
+  version      INT NOT NULL,
+  product_id   INT REFERENCES products(id),
+  title        VARCHAR(200) NOT NULL,
+  problem      TEXT NOT NULL,
+  solution     TEXT NOT NULL,
+  tags         VARCHAR(300),
+  approved_by  VARCHAR(100) NOT NULL,
+  approved_at  TIMESTAMP NOT NULL,
+  replaced_at  TIMESTAMP NOT NULL DEFAULT now(),  -- da den ble erstattet av en nyere versjon
+  UNIQUE (article_id, version)
+);
+
 -- KI-forslag som venter på godkjenning
 CREATE TABLE proposals (
   id                  INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
