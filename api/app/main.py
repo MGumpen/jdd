@@ -10,10 +10,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from . import chat, config, review, worker
+from . import chat, config, duplicates, review, worker
 from .db import get_db
 from .models import EmailItem, KnowledgeArticle, PipelineEvent, Product, Proposal
-from .search import article_sources, iso, search_articles
+from .search import article_sources, article_versions, iso, search_articles
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ def product_json(p: Product | None) -> dict | None:
     return {"id": p.id, "sku": p.sku, "name": p.name, "category": p.category} if p else None
 
 
-def article_json(a: KnowledgeArticle, sources: list[dict] | None = None) -> dict:
+def article_json(a: KnowledgeArticle, sources: list[dict] | None = None, versions: list[dict] | None = None) -> dict:
     return {
         "id": a.id,
         "product": product_json(a.product),
@@ -58,6 +58,7 @@ def article_json(a: KnowledgeArticle, sources: list[dict] | None = None) -> dict
         "outdated_at": iso(a.outdated_at),
         "outdated_reason": a.outdated_reason,
         "sources": sources if sources is not None else [],
+        "previous_versions": versions if versions is not None else [],
     }
 
 
@@ -100,6 +101,8 @@ class ApproveRequest(BaseModel):
     solution: str | None = None
     tags: str | None = Field(default=None, max_length=300)
     product_id: int | None = None  # valgfritt: den ansatte kan velge riktig produkt
+    # «Godkjenn som ny artikkel i stedet»: den ansatte mener duplikat-treffet er feil.
+    as_new: bool = False
 
 
 class RejectRequest(BaseModel):
@@ -125,10 +128,16 @@ def get_proposal(proposal_id: int, db: Session = Depends(get_db)):
         .where(PipelineEvent.email_item_id == proposal.email_item_id)
         .order_by(PipelineEvent.id)
     )
+    # Andre ventende forslag om samme problem, så den ansatte ser dem før godkjenning.
+    similar = (
+        duplicates.similar_pending(db, proposal.id, proposal.problem, proposal.product_id)
+        if proposal.status == "pending" else []
+    )
     return {
         **proposal_json(proposal),
         "email_text": proposal.email_item.anonymized_text if proposal.email_item else None,
         "events": [event_json(e) for e in events],
+        "similar_pending": similar,
     }
 
 
@@ -138,11 +147,11 @@ def approve_proposal(proposal_id: int, body: ApproveRequest, db: Session = Depen
     if not reviewer:
         raise HTTPException(422, "Ansattnavn mangler")
     # Bare felt som faktisk ble sendt, tas med (slik at product_id=null kan bety «ingen produkt»).
-    edits = body.model_dump(include=body.model_fields_set - {"reviewer"})
+    edits = body.model_dump(include=body.model_fields_set - {"reviewer", "as_new"})
     if edits.get("product_id") is not None and db.get(Product, edits["product_id"]) is None:
         raise HTTPException(422, "Ukjent produkt")
     try:
-        article = review.approve(db, proposal_id, reviewer, edits)
+        article = review.approve(db, proposal_id, reviewer, edits, as_new=body.as_new)
     except review.ReviewError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
     return {"status": "approved", "article": article_json(article)}
@@ -176,7 +185,11 @@ def get_article(article_id: int, db: Session = Depends(get_db)):
     article = db.get(KnowledgeArticle, article_id)
     if article is None:
         raise HTTPException(404, "Artikkelen finnes ikke")
-    return article_json(article, article_sources(db, [article.id])[article.id])
+    return article_json(
+        article,
+        article_sources(db, [article.id])[article.id],
+        article_versions(db, [article.id])[article.id],
+    )
 
 
 class OutdatedRequest(BaseModel):
@@ -259,7 +272,9 @@ def stats(db: Session = Depends(get_db)):
 @app.post("/api/demo/reset")
 def demo_reset(db: Session = Depends(get_db)):
     """Tømmer alt unntatt produkter og seedartikler, slik at demoen kan kjøres på nytt."""
-    db.execute(text("TRUNCATE pipeline_events, proposals, email_items, knowledge_articles RESTART IDENTITY"))
+    db.execute(text(
+        "TRUNCATE pipeline_events, proposals, email_items, article_versions, knowledge_articles RESTART IDENTITY"
+    ))
     db.execute(text("SELECT seed_demo_articles()"))  # definert i db/seed.sql (startartiklene er aktive)
     db.commit()
     # Tøm også innboksen, ellers ville workeren behandlet de gamle e-postene på nytt.

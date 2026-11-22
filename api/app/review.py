@@ -1,19 +1,26 @@
 """Godkjenning og avvisning av forslag. Det er BARE her artikler skrives.
 
 - Godkjent «new»:    ny rad i knowledge_articles.
-- Godkjent «update»: den matchede artikkelen oppdateres og får version + 1.
+- Godkjent «update»: den gamle versjonen lagres i article_versions, og den matchede
+                     artikkelen oppdateres og får version + 1. Den ansatte kan også
+                     velge å lage en ny artikkel i stedet (as_new).
 - Avvist:            forslaget merkes «rejected», begrunnelsen lagres i hendelsesloggen.
 - Utdatert:          en ansatt merker en artikkel som utdatert (eller gjenoppretter den).
                      Utdaterte artikler vises med advarsel i søket og brukes ikke av chatboten.
+
+Etter hver godkjenning kjøres duplikatsjekken på nytt for de andre ventende forslagene,
+så et likt forslag blir en oppdatering av den nye artikkelen i stedet for en dublett.
 """
 
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import duplicates
 from .anonymize import anonymize_rules
 from .extract import Extraction, sanitize
-from .models import KnowledgeArticle, Proposal, log_event
+from .models import ArticleVersion, KnowledgeArticle, Proposal, log_event
 
 
 def utcnow() -> datetime:
@@ -47,7 +54,47 @@ def _pending(db: Session, proposal_id: int) -> Proposal:
     return proposal
 
 
-def approve(db: Session, proposal_id: int, reviewer: str, edits: dict) -> KnowledgeArticle:
+def _save_version(db: Session, article: KnowledgeArticle, now: datetime) -> None:
+    """Tar vare på artikkelen slik den er nå, før en oppdatering overskriver den."""
+    db.add(ArticleVersion(
+        article_id=article.id,
+        version=article.version,
+        product_id=article.product_id,
+        title=article.title,
+        problem=article.problem,
+        solution=article.solution,
+        tags=article.tags,
+        approved_by=article.approved_by,
+        approved_at=article.approved_at,
+        replaced_at=now,
+    ))
+
+
+def recheck_pending(db: Session, approved_proposal_id: int) -> None:
+    """Kjører duplikatsjekken på nytt for alle andre ventende forslag.
+    Kalles etter en godkjenning, fordi en ny eller endret artikkel kan gjøre et
+    ventende forslag til en oppdatering (eller omvendt)."""
+    db.flush()  # sørg for at den nye/endrede artikkelen er med i sammenligningen
+    pending = db.scalars(
+        select(Proposal).where(Proposal.status == "pending", Proposal.id != approved_proposal_id)
+    )
+    for other in pending:
+        dup = duplicates.check(db, other.problem, other.product_id)
+        changed = (dup.proposal_type, dup.matched_article_id) != (other.proposal_type, other.matched_article_id)
+        other.proposal_type = dup.proposal_type
+        other.matched_article_id = dup.matched_article_id
+        other.similarity = dup.similarity
+        if changed:
+            log_event(
+                db, other.email_item_id, "duplicate_check",
+                f"Forslag #{other.id} sjekket på nytt etter at forslag #{approved_proposal_id} ble godkjent: "
+                f"{duplicates.describe(dup)}",
+            )
+
+
+def approve(db: Session, proposal_id: int, reviewer: str, edits: dict, as_new: bool = False) -> KnowledgeArticle:
+    """Godkjenner et forslag. as_new=True betyr at den ansatte mener forslaget ikke handler
+    om det samme som den matchede artikkelen, og vil ha en ny artikkel i stedet."""
     proposal = _pending(db, proposal_id)
 
     # Den ansatte kan ha redigert feltene. Tomme felt betyr «behold forslaget».
@@ -66,18 +113,31 @@ def approve(db: Session, proposal_id: int, reviewer: str, edits: dict) -> Knowle
     proposal.title, proposal.problem, proposal.solution, proposal.tags = clean.title, clean.problem, clean.solution, clean.tags
 
     now = utcnow()
+    choice_note = ""
+    if as_new and proposal.proposal_type == "update":
+        # Den ansatte overstyrer duplikatsjekken. Likheten beholdes, så man ser hva systemet mente.
+        choice_note = f" Den ansatte valgte ny artikkel i stedet for å oppdatere artikkel #{proposal.matched_article_id}."
+        proposal.proposal_type = "new"
+        proposal.matched_article_id = None
+
     article = db.get(KnowledgeArticle, proposal.matched_article_id) if proposal.proposal_type == "update" else None
     if article is not None:
+        _save_version(db, article, now)  # den gamle teksten forsvinner ikke
         article.title = proposal.title
         article.problem = proposal.problem
         article.solution = proposal.solution
         article.tags = proposal.tags
-        article.product_id = proposal.product_id
+        # Er produktet ukjent i forslaget, beholder artikkelen produktet sitt.
+        if proposal.product_id is not None:
+            article.product_id = proposal.product_id
         article.version = article.version + 1
         article.approved_by = reviewer
         article.approved_at = now
         article.updated_at = now
-        detail = f"Godkjent av {reviewer}. Artikkel #{article.id} oppdatert til versjon {article.version}."
+        detail = (
+            f"Godkjent av {reviewer}. Artikkel #{article.id} oppdatert til versjon {article.version}. "
+            f"Versjon {article.version - 1} er lagret som tidligere versjon."
+        )
         # Ny kunnskap erstatter den gamle, så en utdatert artikkel blir aktiv igjen.
         if article.status == "outdated":
             _reactivate(article)
@@ -96,19 +156,22 @@ def approve(db: Session, proposal_id: int, reviewer: str, edits: dict) -> Knowle
         )
         db.add(article)
         db.flush()
-        detail = f"Godkjent av {reviewer}. Ny artikkel #{article.id} lagt i kunnskapsdatabasen."
+        detail = f"Godkjent av {reviewer}. Ny artikkel #{article.id} lagt i kunnskapsdatabasen.{choice_note}"
 
     proposal.status = "approved"
     proposal.article_id = article.id  # kilden: denne e-posten ligger bak artikkelen
     proposal.reviewed_by = reviewer
     proposal.reviewed_at = now
     log_event(db, proposal.email_item_id, "approved", detail)
+    recheck_pending(db, proposal.id)
     db.commit()
     return article
 
 
 def reject(db: Session, proposal_id: int, reviewer: str, reason: str) -> Proposal:
     proposal = _pending(db, proposal_id)
+    # Begrunnelsen kjøres gjennom anonymiseringsreglene, som alle andre felt den ansatte skriver.
+    reason = anonymize_rules(reason)[0].strip()
     proposal.status = "rejected"
     proposal.reviewed_by = reviewer
     proposal.reviewed_at = utcnow()

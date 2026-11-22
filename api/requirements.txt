@@ -3,5 +3,6 @@ uvicorn[standard]>=0.30,<1
 sqlalchemy>=2.0,<3
 psycopg[binary]>=3.2,<4
 httpx>=0.27,<1
-anthropic
+# Låst til hovedversjon 2, så et nytt bygg ikke henter en versjon som endrer API-et (testet med 2.10).
+anthropic>=2.9,<3
 pytest>=8,<9

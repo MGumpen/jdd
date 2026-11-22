@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 THREAD_SEPARATOR = "----- Opprinnelig melding -----"
 
 SKU_PATTERN = re.compile(r"\bDEMO-\d{3}\b")
-PLACEHOLDER = re.compile(r"\[(?:NAVN|E-POST|TELEFON|ORDRE|ADRESSE|REGNR)\]")
+PLACEHOLDER = re.compile(r"\[(?:NAVN|E-POST|TELEFON|ORDRE|ADRESSE|REGNR|FØDSELSNR|KONTONR)\]")
 GREETING = re.compile(r"^(hei|hallo|heisann|kjære|god dag)\b", re.IGNORECASE)
 SIGN_OFF = re.compile(r"^(mvh|med vennlig hilsen|vennlig hilsen|beste hilsen|hilsen)\b", re.IGNORECASE)
 SUBJECT_PREFIX = re.compile(r"^\s*((sv|re|vs|fw|fwd)\s*:\s*)+", re.IGNORECASE)

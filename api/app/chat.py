@@ -3,8 +3,10 @@
 1. Finn de 3 mest relevante artiklene (samme søk som kunnskapsbasen).
    Artikler som er merket som utdatert, brukes aldri.
 2. KI-modus: modellen svarer kun ut fra artiklene og sier fra hvis svaret ikke finnes.
+   Den oppgir hvilke artikler den brukte, så bare de vises som kilde.
    Regelmodus: returner løsningen fra beste artikkel.
-Svaret viser alltid hvilke artikler det bygger på.
+Svaret viser alltid hvilke artikler det bygger på, og når de ble godkjent. Navnet på
+den ansatte som godkjente vises ikke til kunden, bare at kundesenteret har godkjent.
 """
 
 import logging
@@ -31,8 +33,26 @@ NO_ANSWER = "Jeg fant dessverre ingen artikkel i kunnskapsdatabasen som svarer p
 _AI_SYSTEM = (
     "Du er kundeservice-chatboten til JDD Utstyr. Svar kort og vennlig på norsk bokmål. "
     "Du skal BARE bruke informasjonen i artiklene du får oppgitt. Hvis artiklene ikke svarer på spørsmålet, "
-    "si at du ikke fant svaret og anbefal kunden å kontakte kundeservice. Ikke finn på noe."
+    "si at du ikke fant svaret og anbefal kunden å kontakte kundeservice. Ikke finn på noe. "
+    "Oppgi ID-ene til artiklene svaret bygger på i article_ids. Svarer ingen av artiklene på spørsmålet, "
+    "sett found til false og article_ids til en tom liste."
 )
+
+# Svaret fra modellen må følge dette skjemaet (structured outputs).
+_AI_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string", "description": "Svaret til kunden"},
+        "found": {"type": "boolean", "description": "true hvis artiklene svarer på spørsmålet"},
+        "article_ids": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "ID-ene til artiklene svaret bygger på",
+        },
+    },
+    "required": ["answer", "found", "article_ids"],
+    "additionalProperties": False,
+}
 
 
 def search_terms(question: str) -> str:
@@ -50,8 +70,8 @@ def answer(db: Session, question: str) -> dict:
             "product_name": a["product_name"],
             "version": a["version"],
             "score": a["score"],
-            # Kilde og dato, så kunden og den ansatte ser hvor ferskt svaret er.
-            "approved_by": a["approved_by"],
+            # Kilde og dato, så kunden ser hvor ferskt svaret er. Den ansattes navn sendes
+            # ikke til kunden; det ser de ansatte i Kunnskapsbase.
             "updated_at": a["updated_at"],
             "source_count": len(a["sources"]),
         }
@@ -69,7 +89,11 @@ def answer(db: Session, question: str) -> dict:
                 for a in articles
             )
             prompt = f"Artikler fra kunnskapsdatabasen:\n{context}\n\nKundens spørsmål: {question}"
-            return {"answer": llm.complete(_AI_SYSTEM, prompt, max_tokens=4000), "sources": sources, "mode": "KI"}
+            data = llm.complete_json(_AI_SYSTEM, prompt, _AI_SCHEMA, max_tokens=4000)
+            # Vis bare artiklene modellen faktisk brukte. Fant den ikke svaret, vises ingen kilder.
+            used = set(data.get("article_ids") or [])
+            shown = ([s for s in sources if s["id"] in used] or sources) if data.get("found") else []
+            return {"answer": data["answer"], "sources": shown, "mode": "KI"}
         except Exception as exc:  # noqa: BLE001 – faller tilbake til regelmodus
             log.warning("KI-chat feilet, bruker regelmodus: %s", exc)
 

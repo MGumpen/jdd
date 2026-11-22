@@ -65,6 +65,37 @@ def article_sources(db: Session, article_ids: list[int]) -> dict[int, list[dict]
     return sources
 
 
+def article_versions(db: Session, article_ids: list[int]) -> dict[int, list[dict]]:
+    """Tidligere versjoner av flere artikler på én gang, nyeste først."""
+    if not article_ids:
+        return {}
+    rows = db.execute(
+        text(
+            """
+            SELECT article_id, version, title, problem, solution, tags,
+                   approved_by, approved_at, replaced_at
+            FROM article_versions
+            WHERE article_id = ANY(:ids)
+            ORDER BY article_id, version DESC
+            """
+        ),
+        {"ids": list(article_ids)},
+    ).mappings()
+    versions: dict[int, list[dict]] = {i: [] for i in article_ids}
+    for row in rows:
+        versions[row["article_id"]].append({
+            "version": row["version"],
+            "title": row["title"],
+            "problem": row["problem"],
+            "solution": row["solution"],
+            "tags": row["tags"],
+            "approved_by": row["approved_by"],
+            "approved_at": iso(row["approved_at"]),
+            "replaced_at": iso(row["replaced_at"]),
+        })
+    return versions
+
+
 def search_articles(
     db: Session, q: str = "", product_id: int | None = None, limit: int = 50, only_active: bool = False
 ) -> list[dict]:
@@ -98,7 +129,9 @@ def search_articles(
         LIMIT :limit
     """
     rows = db.execute(text(sql), params).mappings().all()
-    sources = article_sources(db, [row["id"] for row in rows])
+    ids = [row["id"] for row in rows]
+    sources = article_sources(db, ids)
+    versions = article_versions(db, ids)
     return [
         {
             **row,
@@ -107,6 +140,7 @@ def search_articles(
             "updated_at": iso(row["updated_at"]),
             "outdated_at": iso(row["outdated_at"]),
             "sources": sources[row["id"]],
+            "previous_versions": versions[row["id"]],
         }
         for row in rows
     ]

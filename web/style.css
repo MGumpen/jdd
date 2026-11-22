@@ -231,3 +231,12 @@ label > input, label > select, label > textarea { margin-top: .25rem; color: var
   background: #eef6ff; border: 1px solid #bcd6f5; border-radius: 8px;
   padding: .5rem .75rem; margin-bottom: .75rem; font-size: .9rem;
 }
+
+/* ---------- Lignende forslag og tidligere versjoner ---------- */
+.similar-note {
+  background: #fff8e6; border: 1px solid #f3d58a; color: #4a3500;
+  border-radius: 8px; padding: .5rem .75rem; margin-bottom: .75rem; font-size: .9rem;
+}
+.similar-note ul { margin: .25rem 0; padding-left: 1.1rem; }
+.old-version { border: 1px solid var(--border); border-radius: 8px; padding: .35rem .65rem; margin: .35rem 0; font-size: .9rem; }
+.old-version summary { cursor: pointer; color: var(--muted); }

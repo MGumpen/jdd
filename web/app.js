@@ -259,10 +259,19 @@ async function openProposal(id) {
   } catch (err) {
     return toast(err.message, true);
   }
-  const productOptions = [`<option value="">Ukjent / ikke valgt</option>`]
-    .concat(products.map((x) => `<option value="${x.id}" ${p.product?.id === x.id ? "selected" : ""}>${esc(x.name)} (${esc(x.sku)})</option>`))
-    .join("");
   const m = p.matched_article;
+  // Kjenner ikke forslaget produktet, foreslås produktet til artikkelen det ligner.
+  const productId = p.product?.id ?? m?.product?.id;
+  const productOptions = [`<option value="">Ukjent / ikke valgt</option>`]
+    .concat(products.map((x) => `<option value="${x.id}" ${productId === x.id ? "selected" : ""}>${esc(x.name)} (${esc(x.sku)})</option>`))
+    .join("");
+  // Andre ventende forslag om samme problem: godkjenn ett, så sjekkes resten på nytt.
+  const similar = p.similar_pending || [];
+  const similarNote = similar.length
+    ? `<div class="similar-note"><strong>Lignende forslag venter:</strong>
+        <ul>${similar.map((s) => `<li><a href="#forslag-${s.id}">Forslag #${s.id}: ${esc(s.title)}</a> (${percent(s.similarity)} likhet)</li>`).join("")}</ul>
+        Godkjenner du dette forslaget, sjekkes de andre på nytt og blir foreslått som oppdatering av artikkelen.</div>`
+    : "";
   const done = p.status !== "pending"; // allerede godkjent/avvist: bare vis, ikke rediger
   const ro = done ? "disabled" : "";
   const statusNote = done
@@ -292,6 +301,7 @@ async function openProposal(id) {
       <form class="card form-grid" id="proposal-form">
         <h3>${m ? "Forslag til oppdatert artikkel" : "Forslag til ny artikkel"}</h3>
         ${statusNote}
+        ${done ? "" : similarNote}
         <label>Tittel <input name="title" value="${esc(p.title)}" maxlength="200" required ${ro}></label>
         <label>Produkt <select name="product_id" ${ro}>${productOptions}</select></label>
         <label>Problem <textarea name="problem" rows="3" required ${ro}>${esc(p.problem)}</textarea></label>
@@ -299,6 +309,7 @@ async function openProposal(id) {
         <label>Stikkord <input name="tags" value="${esc(p.tags || "")}" maxlength="300" ${ro}></label>
         <div class="form-actions" ${done ? "hidden" : ""}>
           <button type="submit" class="button approve">${m ? "Godkjenn og oppdater artikkel" : "Godkjenn som ny artikkel"}</button>
+          ${m ? `<button type="button" class="button ghost" id="approve-new-btn" title="Bruk denne hvis forslaget handler om et annet problem enn artikkelen">Lag ny artikkel i stedet</button>` : ""}
           <button type="button" class="button reject" id="reject-toggle">Avvis …</button>
         </div>
         <div id="reject-box" hidden>
@@ -342,11 +353,11 @@ async function openProposal(id) {
     $("#reject-reason").focus();
   });
 
-  $("#proposal-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  /** Godkjenner forslaget. asNew = true lager ny artikkel selv om forslaget ligner en eksisterende. */
+  async function approveProposal(asNew) {
     const reviewer = reviewerName();
     if (!reviewer) return;
-    const form = new FormData(e.target);
+    const form = new FormData($("#proposal-form"));
     const productId = form.get("product_id");
     try {
       const result = await api(`/api/proposals/${p.id}/approve`, {
@@ -358,6 +369,7 @@ async function openProposal(id) {
           solution: form.get("solution"),
           tags: form.get("tags"),
           product_id: productId ? Number(productId) : null,
+          as_new: asNew,
         },
       });
       toast(`Godkjent. Artikkel #${result.article.id} er nå versjon ${result.article.version}.`);
@@ -366,6 +378,15 @@ async function openProposal(id) {
     } catch (err) {
       toast(err.message, true);
     }
+  }
+
+  $("#proposal-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    approveProposal(false);
+  });
+  $("#approve-new-btn")?.addEventListener("click", () => {
+    if (!$("#proposal-form").reportValidity()) return; // samme sjekk av påkrevde felt som «Godkjenn»
+    approveProposal(true);
   });
 
   $("#reject-btn").addEventListener("click", async () => {
@@ -403,6 +424,21 @@ function sourcesHtml(a) {
         · godkjent av ${esc(s.reviewed_by)} ${formatDate(s.reviewed_at)}</li>`
     )
     .join("")}</ul>`;
+}
+
+/** Tidligere versjoner: teksten slik den var før en oppdatering ble godkjent. */
+function versionsHtml(a) {
+  const versions = a.previous_versions || [];
+  if (versions.length === 0) return "";
+  return `<div class="field-label">Tidligere versjoner</div>${versions
+    .map(
+      (v) => `<details class="old-version">
+        <summary>Versjon ${v.version} · godkjent av ${esc(v.approved_by)} ${formatDate(v.approved_at)} · erstattet ${formatDate(v.replaced_at)}</summary>
+        <div class="field-label">Problem</div><p>${esc(v.problem)}</p>
+        <div class="field-label">Løsning</div><p>${esc(v.solution)}</p>
+      </details>`
+    )
+    .join("")}`;
 }
 
 function statusPill(a) {
@@ -451,6 +487,7 @@ async function searchArticles() {
             <div class="field-label">Løsning</div><p>${esc(a.solution)}</p>
             <div class="field-label">Stikkord</div><p>${esc(a.tags || "–")}</p>
             <div class="field-label">Kilde</div>${sourcesHtml(a)}
+            ${versionsHtml(a)}
             ${articleActionsHtml(a)}
           </div>
         </details>`
@@ -548,7 +585,7 @@ async function ask(question) {
       ? `<div class="sources">Svaret bygger på:<ul>${result.sources
           .map(
             (s) => `<li>Artikkel #${s.id}: ${esc(s.title)} (${esc(s.product_name || "uten produkt")}, versjon ${s.version}).
-              Godkjent av ${esc(s.approved_by)}, ${formatDate(s.updated_at)}${s.source_count ? `, bygger på ${s.source_count} e-post${s.source_count > 1 ? "er" : ""} fra kundeservice` : ""}.</li>`
+              Godkjent av kundesenteret ${formatDate(s.updated_at)}${s.source_count ? `, bygger på ${s.source_count} e-post${s.source_count > 1 ? "er" : ""} fra kundeservice` : ""}.</li>`
           )
           .join("")}</ul></div>`
       : `<div class="sources">Ingen artikler brukt.</div>`;

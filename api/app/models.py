@@ -54,6 +54,24 @@ class KnowledgeArticle(Base):
     product: Mapped[Product | None] = relationship()
 
 
+class ArticleVersion(Base):
+    """En tidligere versjon av en artikkel. Lagres før en godkjent oppdatering overskriver artikkelen."""
+
+    __tablename__ = "article_versions"
+
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
+    article_id: Mapped[int] = mapped_column(ForeignKey("knowledge_articles.id"))
+    version: Mapped[int]
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    title: Mapped[str] = mapped_column(String(200))
+    problem: Mapped[str] = mapped_column(Text)
+    solution: Mapped[str] = mapped_column(Text)
+    tags: Mapped[str | None] = mapped_column(String(300))
+    approved_by: Mapped[str] = mapped_column(String(100))
+    approved_at: Mapped[datetime]
+    replaced_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class Proposal(Base):
     """Forslag til ny eller oppdatert artikkel. Venter på godkjenning fra en ansatt."""
 

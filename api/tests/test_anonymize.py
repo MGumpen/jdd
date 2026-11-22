@@ -35,6 +35,18 @@ from .conftest import find_pii, load_seed_emails, thread_text
         ("Med vennlig hilsen\nMarte Aas", "Med vennlig hilsen\n[NAVN]"),
         ("Mvh\r\nKari Berg\r\n", "Mvh\n[NAVN]\n"),  # linjeskift fra SMTP
         ("Jeg heter Ola Nordmann og", "Jeg heter [NAVN] og"),
+        # Postnummer og poststed etter en gateadresse, eller alene på en linje
+        ("Storgata 12\n4612 Kristiansand", "[ADRESSE]\n[ADRESSE]"),
+        ("Mvh\nKari\n4612 Kristiansand\n", "Mvh\n[NAVN]\n[ADRESSE]\n"),
+        # Registreringsnummer, fødselsnummer og kontonummer
+        ("Bilen har regnr. AB 12345.", "Bilen har regnr. [REGNR]."),
+        ("Skiltet er EL12345", "Skiltet er [REGNR]"),
+        ("Fødselsnummer 01017012345", "Fødselsnummer [FØDSELSNR]"),
+        ("Kontonummer 1234.56.78901", "Kontonummer [KONTONR]"),
+        # Små bokstaver i hilsen og signatur, og flere navn i hilsenen
+        ("hei Kari,", "hei [NAVN],"),
+        ("mvh\nola nordmann", "mvh\n[NAVN]"),
+        ("Hei Kari Berg og Per,", "Hei [NAVN],"),
     ],
 )
 def test_rules(raw, expected):
@@ -48,10 +60,25 @@ def test_rules(raw, expected):
         "Hei,\nJeg har kjøpt DEMO-001.",       # SKU skal stå urørt
         "To lysbjelker på 120 W og 25 A sikring på 12 V.",  # tekniske tall
         "Mvh\nJDD Utstyr kundeservice",        # firmanavn i signaturen
+        # Teknisk informasjon som ligner postnummer eller telefonnummer, men er produktkunnskap
+        "Passer modeller fra 2018 Toyota Hilux.",
+        "Lysbjelken gir 9600 Lumen ved 12 V.",
+        "Arbeidslyset er på 4800 Watt totalt.",
+        "Varenummer 12345678 er utsolgt.",
+        "Art.nr: 87654321 passer også.",
+        # Ord som står der et navn ofte står, men ikke er navn
+        "Hilsen Kundeservice",
+        "Mvh\nkundeservice",
     ],
 )
 def test_rules_leave_normal_text_alone(text):
     assert anonymize_rules(text)[0] == text
+
+
+def test_rule_counts_only_real_replacements():
+    """Hendelsesloggen skal vise hvor mange opplysninger som faktisk ble fjernet."""
+    _, counts = anonymize_rules("Ring 912 34 567. Varenummer 12345678.")
+    assert counts == {"telefon": 1}
 
 
 @pytest.mark.parametrize("email", load_seed_emails(), ids=lambda e: e["subject"])
@@ -93,6 +120,7 @@ def _database_texts() -> list[str] | None:
                     SELECT anonymized_text FROM email_items
                     UNION ALL SELECT concat_ws(' ', title, problem, solution, tags) FROM proposals
                     UNION ALL SELECT concat_ws(' ', title, problem, solution, tags) FROM knowledge_articles
+                    UNION ALL SELECT concat_ws(' ', title, problem, solution, tags) FROM article_versions
                     UNION ALL SELECT coalesce(detail, '') FROM pipeline_events
                     """
                 )
